@@ -46,7 +46,7 @@
         mex-spots (->> mexes
                        (map
                          (fn [mex]
-                           {(.getResourceMapSpotsNearest map-obj (.getPos mex))
+                           {(.getResourceMapSpotsNearest map-obj (:metal resources) (.getPos mex))
                             {(.getName (.getdef mex)) mex}}))
                        (merge-with merge))
         metal-details (into {}
