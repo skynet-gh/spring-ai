@@ -2,7 +2,7 @@
   (:require
     [clojure.pprint :refer [pprint]]
     [clojure.string :as string]
-    [taoensso.timbre :as timbre :refer [debug info warn error fatal]]
+    [taoensso.timbre :as timbre :refer [trace debug info warn error fatal]]
     [taoensso.timbre.appenders.core :as appenders])
   (:import
     (com.springrts.ai.oo AbstractOOAI AIFloat3 OOAI)
@@ -27,6 +27,10 @@
 
 (def build-timeout 10000)
 (def min-build-dist 5)
+(def min-build-dists
+  { "armcom" 20
+   "armck" 30
+   "armack" 10})
 
 
 (defn pprint-str [d]
@@ -162,24 +166,41 @@
   (< share (/ current storage)))
 
 
+(def t1-kbots
+  ["armck" "peewee" "armham"])
+
+(def t2-kbots
+  ["armack" "armfido" "armfboy"])
+
+(def t3-kbots
+  ["armbanth"])
+
+
 (defn assign-unit
   "A unit has finished being constructed, or is now idle. Attempt to do something with it."
   [this unit]
   (let [unitdefname (.. unit (getDef) (getName))
         {:keys [callback] :as state} @(.state this)]
-    (when (#{"armlab"} unitdefname)
-      (let [buildname "armck"
+    (cond
+      (#{"armlab"} unitdefname)
+      (let [buildname (rand-nth t1-kbots)
             builddef (.. callback (getUnitDefByName buildname))
             unitpos (.getPos unit)]
         (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
-        (.build unit builddef unitpos 0 (short 0) build-timeout)))
-    (when (#{"armalab"} unitdefname)
-      (let [buildname "armack"
+        (.build unit builddef unitpos 0 (short 0) build-timeout))
+      (#{"armalab"} unitdefname)
+      (let [buildname (rand-nth t2-kbots)
             builddef (.. callback (getUnitDefByName buildname))
             unitpos (.getPos unit)]
         (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
-        (.build unit builddef unitpos 0 (short 0) build-timeout)))
-    (when (#{"armcom" "armck" "armack"} unitdefname) ; TODO any builder
+        (.build unit builddef unitpos 0 (short 0) build-timeout))
+      (#{"armshltx"} unitdefname)
+      (let [buildname (rand-nth t3-kbots)
+            builddef (.. callback (getUnitDefByName buildname))
+            unitpos (.getPos unit)]
+        (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
+        (.build unit builddef unitpos 0 (short 0) build-timeout))
+      (#{"armcom" "armck" "armack"} unitdefname) ; TODO any builder
       (let [{:keys [resources metal-spots]} state
             {:keys [metal energy] :as economy} (economy state)
             metal-income-ratio (income-ratio metal)
@@ -199,7 +220,7 @@
                                             "armmoho"
                                             "armmex")
                                builddef (.. callback (getUnitDefByName buildname))
-                               mex-search (if (= "armack" unitdefname) 40 20)]
+                               mex-search (if (= "armack" unitdefname) 50 15)]
                            (debug "Metal radius is" metal-radius)
                            (->> metal-spots
                                 (sort-by (fn [p] (distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
@@ -212,6 +233,7 @@
                                        (pos? (- (:income energy) (:pull energy))))
             kbot-lab (first (filter (comp #{"armlab"} #(.getName %) #(.getDef %)) team-units))
             akbot-lab (first (filter (comp #{"armalab"} #(.getName %) #(.getDef %)) team-units))
+            gantry (first (filter (comp #{"armshltx"} #(.getName %) #(.getDef %)) team-units))
             buildname (cond
                         (and should-build-metal metal-spot)
                         (if (= "armack" unitdefname)
@@ -219,6 +241,7 @@
                           "armmex")
                         (not kbot-lab) "armlab"
                         (and (not akbot-lab) (= "armck" unitdefname)) "armalab"
+                        (and (not gantry) (= "armack" unitdefname)) "armshltx"
                         should-build-converter
                         (if (= "armack" unitdefname)
                           "armmmkr"
@@ -237,16 +260,28 @@
             _ (when-not builddef
                 (warn "Unable to find unit definition for" buildname))
             pos (or metal-spot
-                    (.findClosestBuildSite map-obj builddef unitpos 1000 min-build-dist 0))]
+                    (.findClosestBuildSite map-obj builddef unitpos 5000 min-build-dist 0))]
         (info "Building" (.getName builddef) "with" unitdefname "at" pos)
-        (.build unit builddef pos 0 (short 0) build-timeout)))))
+        (.build unit builddef pos 0 (short 0) build-timeout))
+      :else ; attack something
+      (let [enemies (.getEnemiesInRadarAndLos callback)
+            map-obj (.getMap callback)
+            unitpos (.getPos unit)
+            closest-enemy (->> enemies
+                               (sort-by (comp (partial distance unitpos) #(.getPos %)))
+                               first)]
+        (.attack unit (short 0) Integer/MAX_VALUE)))))
+
 
 
 (defn ai-unitFinished [this unit]
   (try-log "unitFinished"
     (let [unitdefname (.. unit (getDef) (getName))]
       (debug "Unit" (str "'" unitdefname "'") "finished")
-      (assign-unit this unit))
+      (assign-unit this unit)
+      (when (= "armdf" unitdefname)
+        (info "Fusion finished, active?" (.isActivated unit))
+        (.setOn unit true (short 0) Integer/MAX_VALUE)))
     0))
 
 
@@ -274,11 +309,11 @@
 
 (defn ai-unitDamaged [this unit attacker damage direction weapon-def paralyzer]
   (try-log "unitDamaged"
-    (info "Unit" (str "'" (.. unit (getDef) (getName)) "'") "damaged by"
-          (when attacker
-            (when-let [attackerdef (.getDef attacker)]
-              (str "'" (.getName attackerdef) "'")))
-          "for" damage "from" direction "using" weapon-def ", paralyzer" paralyzer)
+    (trace "Unit" (str "'" (.. unit (getDef) (getName)) "'") "damaged by"
+           (when attacker
+             (when-let [attackerdef (.getDef attacker)]
+               (str "'" (.getName attackerdef) "'")))
+           "for" damage "from" direction "using" weapon-def ", paralyzer" paralyzer)
     0))
 
 (defn ai-unitDestroyed [unit attacker]
@@ -292,8 +327,8 @@
   (try-log "enemyDamaged"
     (let [enemydefname (.. enemy (getDef) (getName))
           attackerdefname (.. attacker (getDef) (getName))]
-      (info "Enemy" (str "'" enemydefname "'") "damaged by" attackerdefname "for" damage
-            "from" direction "using" weapon-def ", paralyzer" paralyzer))
+      (trace "Enemy" (str "'" enemydefname "'") "damaged by" attackerdefname "for" damage
+             "from" direction "using" weapon-def ", paralyzer" paralyzer))
     0))
 
 (defn ai-enemyDestroyed [this enemy attacker]
@@ -344,7 +379,7 @@
 (defn ai-weaponFired [this unit weapon-def]
   (try-log "weaponFired"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (info "Unit" (str "'" unitdefname "'") "fired weapon" weapon-def))
+      (trace "Unit" (str "'" unitdefname "'") "fired weapon" weapon-def))
     0))
 
 (defn ai-playerCommand [this units command-topic-id player-id]
