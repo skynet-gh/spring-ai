@@ -1,6 +1,6 @@
 (ns skynet.poi-test
   (:require
-    [clojure.test :refer [deftest is testing]]
+    [clojure.test :refer [deftest is]]
     [skynet.math :as math]
     [skynet.poi :as poi]))
 

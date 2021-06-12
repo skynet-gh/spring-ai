@@ -58,8 +58,14 @@
 (defn filter-idle [units]
   (->> units
        (remove (comp ignore-idle-types unit/typeof))
-       (filter (comp empty? #(.getCurrentCommands %)))))
+       (filter (comp empty? (fn [^Unit unit] (.getCurrentCommands unit))))))
 
+(defn get-def [^Unit unit]
+  (.getDef unit))
+(def builder?
+  (comp (fn [^UnitDef unit-def] (when unit-def (.isBuilder unit-def))) get-def))
+(def fighter?
+  (comp (fn [^UnitDef unit-def] (when unit-def (.isAbleToFight unit-def))) get-def))
 
 (defn world
   "Returns data about the world obtained from state."
@@ -68,13 +74,13 @@
         team-units (.getTeamUnits callback)
         com-name (first
                    (filter (comp #{"armcom" "corcom"})
-                           (map (comp #(.getName %) #(.getDef %)) team-units)))
-        builder-units (filter (comp #(.isBuilder %) #(.getDef %)) team-units)
+                           (map unit/def-name team-units)))
+        builder-units (filter builder? team-units)
         get-extracts-metal (fn [^UnitDef unit-def] (.getExtractsResource unit-def (:metal resources)))
-        mexes (filter (comp pos? get-extracts-metal #(.getDef %)) team-units)
+        mexes (filter (comp pos? get-extracts-metal get-def) team-units)
         mex-spots (->> mexes
                        (map
-                         (fn [mex]
+                         (fn [^Unit mex]
                            {(.getResourceMapSpotsNearest map-obj (:metal resources) (.getPos mex))
                             {(.getName (.getDef mex)) {:pos (.getPos mex) :obj mex}}}))
                        (apply merge-with merge))
@@ -93,18 +99,18 @@
                           :poi-dist n
                           :units (.getFriendlyUnitsIn callback center math/default-cluster-distance))))))
         filter-side (case com-name
-                      "armcom" (fn [d] (string/starts-with? (.getName d) "arm"))
-                      "corcom" (fn [d] (string/starts-with? (.getName d) "cor"))
+                      "armcom" (fn [d] (string/starts-with? (unit/def-name d) "arm"))
+                      "corcom" (fn [d] (string/starts-with? (unit/def-name d) "cor"))
                       identity)
         unit-defs (filter filter-side (.getUnitDefs callback))
         unit-defs-by-name (into {}
-                            (map (juxt #(.getName %) identity)
+                            (map (juxt unit/def-name identity)
                                  unit-defs))
         unit-defs-by-type (->> unit-defs
-                               (map (juxt (comp unit/typeof #(.getName %)) identity))
+                               (map (juxt unit/typeof identity))
                                (into {}))
         unit-def-names-by-type (->> unit-defs
-                                    (map (juxt (comp unit/typeof #(.getName %)) #(.getName %)))
+                                    (map (juxt unit/typeof unit/def-name))
                                     (into {}))]
     {::economy (old/economy state)
      ::pois pois
@@ -143,10 +149,7 @@
                                (filter (comp (unit/builds unit) poi/next-building))
                                (sort-by (comp (partial u/distance (.getPos unit)) :center))
                                first
-                               :poi-dist))
-        get-def (fn [^Unit unit] (.getDef unit))
-        builder? (comp (fn [^UnitDef unit-def] (.isBuilder unit-def)) get-def)
-        fighter? (comp (fn [^UnitDef unit-def] (.isAbleToFight unit-def)) get-def)]
+                               :poi-dist))]
     #_ ; does nothing
     (doseq [poi pois]
       (let [center (:center poi)
@@ -167,7 +170,7 @@
                        "sending it to fight at a random POI" (:poi-dist next-poi))
             (if (pos? (rand-int 2))
               (.fight unit (:center next-poi) (short 0) fight-timeout)
-              (.attack unit (:center next-poi) (short 0) fight-timeout)))
+              (.attackArea unit (:center next-poi) math/default-cluster-distance (short 0) fight-timeout)))
           :else
           nil)))
     (doseq [{:keys [poi-dist] :as poi} pois]
@@ -219,7 +222,7 @@
             (log/debug "Unit" unit "(" (unit/typeof unit) ") sent to fight at POI" (:poi-dist next-poi))
             (if (pos? (rand-int 2))
               (.fight unit (:center next-poi) (short 0) fight-timeout)
-              (.attack unit (:center next-poi) (short 0) fight-timeout))))))))
+              (.attackArea unit (:center next-poi) math/default-cluster-distance (short 0) fight-timeout))))))))
 
 
 (defn run [state-atom]

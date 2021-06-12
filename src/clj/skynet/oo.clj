@@ -271,7 +271,7 @@
       (info "Enemy" (str "'" enemydefname "'") "finished"))
     0))
 
-(defn ai-weaponFired [_this unit weapon-def]
+(defn ai-weaponFired [_this _unit _weapon-def]
   0
   #_
   (u/try-log "weaponFired"
@@ -279,14 +279,14 @@
       (log/trace "Unit" (str "'" unitdefname "'") "fired weapon" weapon-def))
     0))
 
-(defn ai-playerCommand [_this units command-topic-id player-id]
+(defn ai-playerCommand [_this _units _command-topic-id _player-id]
   0
   #_
   (u/try-log "playerCommand"
     (log/info "Player" player-id "gave command" command-topic-id "to" (count units) "units")
     0))
 
-(defn ai-commandFinished [_this unit command-id command-topic-id]
+(defn ai-commandFinished [_this _unit _command-id _command-topic-id]
   0
   #_
   (u/try-log "commandFinished"
@@ -294,14 +294,14 @@
       (log/info "Command" command-id "topic" command-topic-id "for unit" (str "'" unitdefname "'") "finished"))
     0))
 
-(defn ai-seismicPing [_this pos strength]
+(defn ai-seismicPing [_this _pos _strength]
   0
   #_
   (u/try-log "seismicPing"
     (log/info "Seismic ping at" pos "strength" strength)
     0))
 
-(defn ai-message [_this player message]
+(defn ai-message [_this _player _message]
   0
   #_
   (u/try-log "message"
