@@ -70,7 +70,7 @@
                     (fn [n cluster]
                       (let [^AIFloat3 center (:center cluster)]
                         (assoc cluster
-                          :dist-index n
+                          :poi-dist n
                           :units (.getFriendlyUnitsIn callback center math/default-cluster-distance))))))
         filter-side (case com-name
                       "armcom" (fn [d] (string/starts-with? (.getName d) "arm"))
@@ -108,13 +108,14 @@
     (doseq [poi pois]
       (let [center (:center poi)]
         (when-not (contains? point-poses center)
-          (.sendTextMessage game (str (:poi-dist poi)) 0)
+          (.sendTextMessage game (str (:poi-dist poi)) 1)
           (.setLastMessagePosition game center)))))
   (doseq [poi pois]
     (log/debug "POI" (:poi-dist poi) "at" (:center poi))
     (let [idle-units (filter-idle (:units poi))]
       (doseq [unit idle-units]
-        (log/debug "Unit" unit "which is" (unit/typeof unit) "should build" (base/next-building poi))))))
+        (log/debug "Unit" unit "which is an" (unit/def-name unit) "which is type" (unit/typeof unit)
+                   "should build" (base/next-building poi))))))
 
 
 
