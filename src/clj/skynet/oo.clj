@@ -28,7 +28,7 @@
 (def build-timeout 10000)
 (def min-build-dist 5)
 (def min-build-dists
-  { "armcom" 20
+  {"armcom" 20
    "armck" 30
    "armack" 10})
 
@@ -83,11 +83,11 @@
 (defn ai-init [this skirmish-ai-id callback]
   (.. callback (getLog) (log "clojure init"))
   (let [now (System/currentTimeMillis)
-        fname (str "log-" now ".txt")
-        data-dirs (.getDataDirs callback)
-        logfile (.allocatePath data-dirs fname true true false false)
         skirmish-ai (.getSkirmishAI callback)
-        team-id (.getTeamId skirmish-ai)]
+        team-id (.getTeamId skirmish-ai)
+        fname (str "log-" team-id "-" now ".txt")
+        data-dirs (.getDataDirs callback)
+        logfile (.allocatePath data-dirs fname true true false false)]
     (.. callback (getLog) (log (str "logging to " logfile)))
     (timbre/merge-config!
       {:appenders
@@ -167,7 +167,7 @@
 
 
 (def t1-kbots
-  ["armck" "peewee" "armham"])
+  ["armck" "armpw" "armham"])
 
 (def t2-kbots
   ["armack" "armfido" "armfboy"])
@@ -175,21 +175,106 @@
 (def t3-kbots
   ["armbanth"])
 
+(def any-combat
+  (disj
+    (set
+      (concat
+        t1-kbots
+        t2-kbots
+        t3-kbots))
+    "armck" "armack"))
+
+(defn build-something
+  [this unit {:keys [callback] :as state} team-units unitdefname]
+  (let [{:keys [resources metal-spots]} state
+        {:keys [metal energy] :as economy} (economy state)
+        metal-income-ratio (income-ratio metal)
+        energy-income-ratio (income-ratio energy)
+        _ (info (count team-units) "units on team")
+        _ (info (str "Economy data \n" (pprint-str economy)))
+        _ (info "Metal income ratio to pull is" metal-income-ratio "vs energy income ratio" energy-income-ratio)
+        should-build-metal (and (not= "armcom" unitdefname)
+                                (<= metal-income-ratio energy-income-ratio))
+        map-obj (.getMap callback)
+        unitpos (.getPos unit)
+        metal-spot (when should-build-metal
+                     ; (.getResourceMapSpotsNearest map-obj (:metal resources) unitpos))
+                     (let [metal-radius (.getExtractorRadius map-obj (:metal resources))
+                           buildname (if (= "armack" unitdefname)
+                                        "armmoho"
+                                        "armmex")
+                           builddef (.. callback (getUnitDefByName buildname))
+                           mex-search (if (= "armack" unitdefname) 50 15)]
+                       (debug "Metal radius is" metal-radius)
+                       (->> metal-spots
+                            (sort-by (fn [p] (distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
+                            (map #(.findClosestBuildSite map-obj builddef % mex-search 0 0))
+                            (filter #(.isPossibleToBuildAt map-obj builddef % 0))
+                            first)))
+        should-build-metal-storage (and (#{"armcom" "armck"} unitdefname) (sharing? metal))
+        should-build-energy-storage (and (#{"armcom" "armck"} unitdefname) (sharing? energy))
+        should-build-converter (or should-build-energy-storage
+                                   (pos? (- (:income energy) (:pull energy))))
+        kbot-lab (first (filter (comp #{"armlab"} #(.getName %) #(.getDef %)) team-units))
+        akbot-lab (first (filter (comp #{"armalab"} #(.getName %) #(.getDef %)) team-units))
+        gantry (first (filter (comp #{"armshltx"} #(.getName %) #(.getDef %)) team-units))
+        buildname (cond
+                    (and should-build-metal metal-spot)
+                    (if (= "armack" unitdefname)
+                      "armmoho"
+                      "armmex")
+                    (not kbot-lab) "armlab"
+                    (and (not akbot-lab) (= "armck" unitdefname)) "armalab"
+                    (and (not gantry) (= "armack" unitdefname)) "armshltx"
+                    should-build-converter
+                    (if (= "armack" unitdefname)
+                      "armmmkr"
+                      "armmakr")
+                    should-build-energy-storage "armestor"
+                    should-build-metal-storage "armmstor"
+                    :else
+                    (case unitdefname
+                      "armcom"
+                      "armsolar"
+                      "armck"
+                      "armadvsol"
+                      "armack"
+                      "armdf"))
+        builddef (.. callback (getUnitDefByName buildname))
+        _ (when-not builddef
+            (warn "Unable to find unit definition for" buildname))
+        pos (or metal-spot
+                (.findClosestBuildSite map-obj builddef unitpos 5000 min-build-dist 0))]
+    (info "Building" (.getName builddef) "with" unitdefname "at" pos)
+    (.build unit builddef pos 0 (short 0) build-timeout)))
+
+(defn guard-something [this unit state team-units]
+  (let [targets (filterv (comp #{"armlab" "armalab" "armshltx"} #(.getName %) #(.getDef %)) team-units)
+        target (rand-nth targets)]
+    (.guard unit target (short 0) Integer/MAX_VALUE)))
+
 
 (defn assign-unit
   "A unit has finished being constructed, or is now idle. Attempt to do something with it."
   [this unit]
   (let [unitdefname (.. unit (getDef) (getName))
-        {:keys [callback] :as state} @(.state this)]
+        {:keys [callback] :as state} @(.state this)
+        team-units (.getTeamUnits callback)]
     (cond
       (#{"armlab"} unitdefname)
-      (let [buildname (rand-nth t1-kbots)
+      (let [ckbot (first (filter (comp #{"armck"} #(.getName %) #(.getDef %)) team-units))
+            buildname (if ckbot
+                        (rand-nth t1-kbots)
+                        "armck")
             builddef (.. callback (getUnitDefByName buildname))
             unitpos (.getPos unit)]
-        (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
+        (info "Building" builddef "(" buildname ") with" unitdefname "at" unitpos)
         (.build unit builddef unitpos 0 (short 0) build-timeout))
       (#{"armalab"} unitdefname)
-      (let [buildname (rand-nth t2-kbots)
+      (let [ackbot (first (filter (comp #{"armack"} #(.getName %) #(.getDef %)) team-units))
+            buildname (if ackbot
+                        (rand-nth t2-kbots)
+                        "armack")
             builddef (.. callback (getUnitDefByName buildname))
             unitpos (.getPos unit)]
         (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
@@ -201,76 +286,21 @@
         (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
         (.build unit builddef unitpos 0 (short 0) build-timeout))
       (#{"armcom" "armck" "armack"} unitdefname) ; TODO any builder
-      (let [{:keys [resources metal-spots]} state
-            {:keys [metal energy] :as economy} (economy state)
-            metal-income-ratio (income-ratio metal)
-            energy-income-ratio (income-ratio energy)
-            team-units (.getTeamUnits callback)
-            _ (info (count team-units) "units on team")
-            _ (info (str "Economy data \n" (pprint-str economy)))
-            _ (info "Metal income ratio to pull is" metal-income-ratio "vs energy income ratio" energy-income-ratio)
-            should-build-metal (and (not= "armcom" unitdefname)
-                                    (<= metal-income-ratio energy-income-ratio))
-            map-obj (.getMap callback)
-            unitpos (.getPos unit)
-            metal-spot (when should-build-metal
-                         ; (.getResourceMapSpotsNearest map-obj (:metal resources) unitpos))
-                         (let [metal-radius (.getExtractorRadius map-obj (:metal resources))
-                               buildname (if (= "armack" unitdefname)
-                                            "armmoho"
-                                            "armmex")
-                               builddef (.. callback (getUnitDefByName buildname))
-                               mex-search (if (= "armack" unitdefname) 50 15)]
-                           (debug "Metal radius is" metal-radius)
-                           (->> metal-spots
-                                (sort-by (fn [p] (distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
-                                (map #(.findClosestBuildSite map-obj builddef % mex-search 0 0))
-                                (filter #(.isPossibleToBuildAt map-obj builddef % 0))
-                                first)))
-            should-build-metal-storage (and (#{"armcom" "armck"} unitdefname) (sharing? metal))
-            should-build-energy-storage (and (#{"armcom" "armck"} unitdefname) (sharing? energy))
-            should-build-converter (or should-build-energy-storage
-                                       (pos? (- (:income energy) (:pull energy))))
-            kbot-lab (first (filter (comp #{"armlab"} #(.getName %) #(.getDef %)) team-units))
-            akbot-lab (first (filter (comp #{"armalab"} #(.getName %) #(.getDef %)) team-units))
-            gantry (first (filter (comp #{"armshltx"} #(.getName %) #(.getDef %)) team-units))
-            buildname (cond
-                        (and should-build-metal metal-spot)
-                        (if (= "armack" unitdefname)
-                          "armmoho"
-                          "armmex")
-                        (not kbot-lab) "armlab"
-                        (and (not akbot-lab) (= "armck" unitdefname)) "armalab"
-                        (and (not gantry) (= "armack" unitdefname)) "armshltx"
-                        should-build-converter
-                        (if (= "armack" unitdefname)
-                          "armmmkr"
-                          "armmakr")
-                        should-build-energy-storage "armestor"
-                        should-build-metal-storage "armmstor"
-                        :else
-                        (case unitdefname
-                          "armcom"
-                          "armsolar"
-                          "armck"
-                          "armadvsol"
-                          "armack"
-                          "armdf"))
-            builddef (.. callback (getUnitDefByName buildname))
-            _ (when-not builddef
-                (warn "Unable to find unit definition for" buildname))
-            pos (or metal-spot
-                    (.findClosestBuildSite map-obj builddef unitpos 5000 min-build-dist 0))]
-        (info "Building" (.getName builddef) "with" unitdefname "at" pos)
-        (.build unit builddef pos 0 (short 0) build-timeout))
-      :else ; attack something
-      (let [enemies (.getEnemiesInRadarAndLos callback)
+      (if (< (rand) 0.5)
+        (build-something this unit state team-units unitdefname)
+        (guard-something this unit state team-units))
+      (any-combat unitdefname) ; attack something
+      (let [enemies (.getEnemyUnitsInRadarAndLos callback)
             map-obj (.getMap callback)
             unitpos (.getPos unit)
             closest-enemy (->> enemies
                                (sort-by (comp (partial distance unitpos) #(.getPos %)))
                                first)]
-        (.attack unit (short 0) Integer/MAX_VALUE)))))
+        (if closest-enemy
+          (.attack unit closest-enemy (short 0) Integer/MAX_VALUE)
+          (debug "No enemies")))
+      :else
+      nil)))
 
 
 
@@ -304,7 +334,8 @@
 (defn ai-unitMoveFailed [this unit]
   (try-log "unitMoveFailed"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (info "Unit" (str "'" unitdefname "'") "move failed"))
+      (info "Unit" (str "'" unitdefname "'") "move failed")
+      (assign-unit this unit))
     0))
 
 (defn ai-unitDamaged [this unit attacker damage direction weapon-def paralyzer]
@@ -333,9 +364,11 @@
 
 (defn ai-enemyDestroyed [this enemy attacker]
   (try-log "enemyDestroyed"
-    (let [enemydefname (.. enemy (getDef) (getName))
-          attackerdefname (.. attacker (getDef) (getName))]
-      (info "Enemy" (str "'" enemydefname "'") "destroyed by" attackerdefname))
+    (let [enemydefname (.. enemy (getDef) (getName))]
+      (info "Enemy" (str "'" enemydefname "'") "destroyed by"
+            (when attacker
+              (when-let [attackerdef (.getDef attacker)]
+                (.getName attackerdef)))))
     0))
 
 (defn ai-enemyEnterRadar [this enemy]
@@ -348,8 +381,11 @@
 
 (defn ai-enemyLeaveRadar [this enemy]
   (try-log "enemyLeaveRadar"
-    (let [enemydefname (.. enemy (getDef) (getName))]
-      (info "Enemy" (str "'" enemydefname "'") "left radar"))
+    (info "Enemy" (str "'" (when enemy
+                             (when-let [enemydef (.getDef enemy)]
+                               (.getName enemydef)))
+                       "'")
+          "left radar")
     0))
 
 (defn ai-enemyEnterLOS [this enemy]
@@ -405,6 +441,18 @@
 
 (defn ai-update [this frame]
   (try-log "update"
+    (when (= 0 (mod frame 3000))
+      (info "Handling update" frame)
+      (info "Looking for idle units")
+      (let [{:keys [callback] :as state} @(.state this)
+            team-units (.getTeamUnits callback)
+            idle-units (filter (comp empty? #(.getCurrentCommands %)) team-units)]
+        (dorun
+          (map
+            (fn [unit]
+              (info "Giving" unit "a job")
+              (assign-unit this unit))
+            (take 10 idle-units)))))
     0))
 
 (defn ai-release [this reason-code]
