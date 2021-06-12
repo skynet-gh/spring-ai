@@ -18,6 +18,9 @@
 (set! *warn-on-reflection* true)
 
 
+(def default-build-timeout 10000)
+
+
 (defn unit-data [resources ^Unit unit]
   (let [unit-def (.getDef unit)]
     {:name (.getName unit-def)
@@ -100,22 +103,26 @@
 
 
 (defn give-commands
-  [{:keys [^OOAICallback callback]} {::keys [pois]}]
+  [{:keys [^OOAICallback callback]} {::keys [pois unit-defs-by-type]}]
   (let [^Map map-obj (.getMap callback)
         points (.getPoints map-obj false)
-        point-poses (set (map (fn [^Point point] (.getPosition point)) points))
+        _point-poses (set (map (fn [^Point point] (.getPosition point)) points))
         ^Game game (.getGame callback)]
     (doseq [poi pois]
-      (let [center (:center poi)]
-        (when-not (contains? point-poses center)
-          (.sendTextMessage game (str (:poi-dist poi)) 1)
-          (.setLastMessagePosition game center)))))
-  (doseq [poi pois]
-    (log/debug "POI" (:poi-dist poi) "at" (:center poi))
-    (let [idle-units (filter-idle (:units poi))]
-      (doseq [unit idle-units]
-        (log/debug "Unit" unit "which is an" (unit/def-name unit) "which is type" (unit/typeof unit)
-                   "should build" (base/next-building poi))))))
+      (let [center (:center poi)
+            zone (rand-int 256)] ; why
+        (.sendTextMessage game (str (:poi-dist poi) " z" zone) zone)
+        (.setLastMessagePosition game center)))
+    (doseq [poi pois]
+      (log/debug "POI" (:poi-dist poi) "at" (:center poi))
+      (let [next-build-type (base/next-building poi)
+            idle-units (filter-idle (:units poi))]
+        (when-let [build-def (get unit-defs-by-type next-build-type)]
+          (let [build-pos (.findClosestBuildSite map-obj build-def (:center poi) math/default-cluster-distance 0 0)]
+            (doseq [^Unit unit (filter (comp #(.isBuilder %) #(.getDef %)) idle-units)]
+              (log/debug "Unit" unit "which is an" (unit/def-name unit) "which is type" (unit/typeof unit)
+                         "should build" next-build-type)
+              (.build unit build-def build-pos 0 (short 0) default-build-timeout))))))))
 
 
 
@@ -124,6 +131,7 @@
   (let [state @state-atom
         world-data (world state)]
     (give-commands state world-data)
+    #_
     (dorun
       (map
         (fn [^Unit unit]
