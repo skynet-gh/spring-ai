@@ -7,6 +7,10 @@
   (:import
     (com.springrts.ai.oo AIFloat3)))
 
+
+(set! *warn-on-reflection* true)
+
+
 (extend-protocol clojure.core.protocols/Datafiable
   AIFloat3
   (datafy [pos]
@@ -25,18 +29,3 @@
      (catch Throwable e#
        (log/error e# (str "Error in " ~fn-name))
        -1)))
-
-(defn normalize-resource 
-  "Returns the resource position with the y value zeroed, since it represents resource value."
-  [res-pos]
-  (AIFloat3. (.x res-pos) 0 (.z res-pos))) ; y is resource
-
-
-(defn distance
-  "Calculates the distance between two (AIFloat3) points."
-  [a b]
-  (let [xd (- (.x a) (.x b))
-        yd (- (.y a) (.y b))
-        zd (- (.z a) (.z b))]
-    (Math/sqrt
-      (+ (* xd xd) (* yd yd) (* zd zd)))))

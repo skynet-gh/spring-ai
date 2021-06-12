@@ -4,6 +4,8 @@
     (com.springrts.ai.oo.clb Unit UnitDef)))
 
 
+(set! *warn-on-reflection* true)
+
 
 (defprotocol DefName
   (def-name [this]))

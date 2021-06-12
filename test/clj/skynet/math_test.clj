@@ -1,10 +1,13 @@
 (ns skynet.math-test
   (:require
     [clojure.datafy :refer [datafy]]
-    [clojure.test :refer [deftest is testing]]
+    [clojure.test :refer [deftest is]]
     [skynet.math :as math])
   (:import
     (com.springrts.ai.oo AIFloat3)))
+
+
+(set! *warn-on-reflection* true)
 
 
 (def coldsnap-v2-metal

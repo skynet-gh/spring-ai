@@ -8,7 +8,6 @@
     [skynet.old :as old]
     [skynet.poi :as poi]
     [skynet.unit :as unit]
-    [skynet.util :as u]
     [taoensso.timbre :as log])
   (:import
     (com.springrts.ai.oo AIFloat3)
@@ -90,7 +89,7 @@
                           metal-positions))
         start-pos (.getStartPos map-obj)
         pois (->> metal-clusters
-                  (sort-by (comp (partial u/distance start-pos) :center))
+                  (sort-by (comp (partial math/distance start-pos) :center))
                   (map-indexed
                     (fn [n cluster]
                       (let [^AIFloat3 center (:center cluster)]
@@ -125,8 +124,14 @@
      ::unit-def-names-by-type unit-def-names-by-type}))
 
 
+(defn find-closest-build-site
+  [^Map map-obj build-def pos search-radius min-dist facing]
+  (let [closest (.findClosestBuildSite map-obj build-def pos search-radius min-dist facing)]
+    (when (not= closest math/nil-point)
+      closest)))
+
 (defn give-commands
-  [{:keys [^OOAICallback callback resources]} {::keys [idle-units mex-by-metal pois unit-defs-by-type]}]
+  [{:keys [^OOAICallback callback resources]} {::keys [economy idle-units mex-by-metal pois unit-defs-by-type]}]
   (let [^Map map-obj (.getMap callback)
         get-resource-map-spot-near (fn [^AIFloat3 pos]
                                      (when pos
@@ -146,9 +151,13 @@
                           (->> pois
                                (remove (comp (or exclude #{}) :poi-dist))
                                (filter (comp (unit/builds unit) poi/next-building))
-                               (sort-by (comp (partial u/distance (.getPos unit)) :center))
+                               (sort-by (comp (partial math/distance (.getPos unit)) :center))
                                first
-                               :poi-dist))]
+                               :poi-dist))
+        poi-to-attack (rand-nth (vec pois))
+        metal-under-p50 (<= (-> economy :metal :current)
+                            (quot (-> economy :metal :storage) 2))]
+    (log/info "Attacking POI" (:poi-dist poi-to-attack))
     #_ ; does nothing
     (doseq [poi pois]
       (let [center (:center poi)
@@ -164,14 +173,9 @@
                        "assigning it to closest that needs work which is" closest-poi)
             (swap! units-for-poi update closest-poi conj unit))
           (fighter? unit)
-          (when-let [next-poi (rand-nth (vec pois))]
-            (log/debug "Unit" unit "(" (unit/typeof unit) ") is not in a POI"
-                       "sending it to fight at a random POI" (:poi-dist next-poi))
-            (.moveTo unit (:center next-poi) (short 0) default-timeout)
-            #_
-            (if (pos? (rand-int 2))
-              (.fight unit (:center next-poi) (short 0) fight-timeout)
-              (.attackArea unit (:center next-poi) math/default-cluster-distance (short 0) fight-timeout)))
+          (when poi-to-attack
+            (log/debug "Unit" unit "(" (unit/typeof unit) ") is not in a POI" "sending it to fight")
+            (.moveTo unit (:center poi-to-attack) (short 0) default-timeout))
           :else
           nil)))
     (doseq [{:keys [poi-dist] :as poi} pois]
@@ -189,22 +193,26 @@
                              (unit/lab? unit)
                              (if (< 2 (count builders)) ; TODO better logic
                                ::cons-kbot
-                               (rand-nth (vec unit-builds)))
+                               (let [options (if metal-under-p50
+                                               (remove unit/cons-types unit-builds)
+                                               unit-builds)]
+                                 (rand-nth (vec options))))
                              :else
                              nil)
                 build-def (get unit-defs-by-type build-type)
-                min-dist (or (get min-build-dists build-type) 1)
+                min-dist (or (get min-build-dists build-type) 2)
                 metal-radius (.getExtractorRadius map-obj (:metal resources))
                 build-pos (cond
                             (= ::unit/mex build-type)
                             (->> poi
                                  :positions
                                  (remove (comp #(get mex-by-metal %) get-resource-map-spot-near))
-                                 (map #(.findClosestBuildSite map-obj build-def % metal-radius 0 0))
+                                 (map #(find-closest-build-site map-obj build-def % metal-radius 0 0))
+                                 (filter some?)
                                  (filter #(.isPossibleToBuildAt map-obj build-def % 0))
                                  first)
                             build-def
-                            (.findClosestBuildSite
+                            (find-closest-build-site
                               map-obj build-def (:center poi) math/default-cluster-distance min-dist 0)
                             :else
                             nil)]
@@ -217,13 +225,9 @@
                 (log/debug "Assigning unit" unit "(" (unit/typeof unit) ") to closest POI that needs work which is" closest-poi)
                 (swap! units-for-poi update closest-poi conj unit)))))
         (doseq [^Unit unit fighters]
-          (when-let [next-poi (rand-nth (vec pois))]
-            (log/debug "Unit" unit "(" (unit/typeof unit) ") sent to fight at POI" (:poi-dist next-poi))
-            (.moveTo unit (:center next-poi) (short 0) default-timeout)
-            #_
-            (if (pos? (rand-int 2))
-              (.fight unit (:center next-poi) (short 0) fight-timeout)
-              (.attackArea unit (:center next-poi) math/default-cluster-distance (short 0) fight-timeout))))))))
+          (when poi-to-attack
+            (log/debug "Unit" unit "(" (unit/typeof unit) ") sent to fight")
+            (.moveTo unit (:center poi-to-attack) (short 0) default-timeout)))))))
 
 
 (defn run [state-atom]

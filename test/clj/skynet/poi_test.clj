@@ -5,6 +5,9 @@
     [skynet.poi :as poi]))
 
 
+(set! *warn-on-reflection* true)
+
+
 (deftest next-building
   (is (= :skynet.unit/mex
          (poi/next-building

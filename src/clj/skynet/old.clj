@@ -1,9 +1,8 @@
 (ns skynet.old
   (:require
+    [skynet.math :as math]
     [skynet.util :as u]
-    [taoensso.timbre :as log])
-  (:import
-    (com.springrts.ai.oo AIFloat3)))
+    [taoensso.timbre :as log]))
 
 
 (def build-timeout 10000)
@@ -106,7 +105,7 @@
                      (log/debug "Metal radius is" metal-radius)
                      (->> metal-spots
                           (remove mex-spots)
-                          (sort-by (fn [p] (u/distance unitpos (u/normalize-resource p))))
+                          (sort-by (fn [p] (math/distance unitpos (math/normalize-resource p))))
                           (map #(.findClosestBuildSite map-obj builddef % metal-radius 0 0))
                           ;(map #(.getResourceMapSpotsNearest map-obj (:metal resources) %))
                           (filter #(.isPossibleToBuildAt map-obj builddef % 0))
@@ -258,7 +257,7 @@
       (let [enemies (.getEnemyUnitsInRadarAndLos callback)
             unitpos (.getPos unit)
             closest-enemy (->> enemies
-                               (sort-by (comp (partial u/distance unitpos) #(.getPos %)))
+                               (sort-by (comp (partial math/distance unitpos) #(.getPos %)))
                                first)]
         (if closest-enemy
           (.attack unit closest-enemy (short 0) Integer/MAX_VALUE)

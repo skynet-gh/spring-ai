@@ -15,6 +15,9 @@
     :state state))
 
 
+(set! *warn-on-reflection* true)
+
+
 (def release-reason
   {0 "unspecified"
    1 "game ended"
