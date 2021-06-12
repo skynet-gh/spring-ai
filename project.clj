@@ -3,7 +3,6 @@
   :test-paths ["test/clj"]
   :java-source-paths ["src/java"]
   :dependencies [[aleph "0.4.6"]
-                 [clj-kdtree "1.2.0"]
                  [clojure.java-time "0.3.2"]
                  [com.taoensso/sente "1.15.0"]
                  [com.taoensso/timbre "4.10.0"]

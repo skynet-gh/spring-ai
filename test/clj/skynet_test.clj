@@ -109,5 +109,16 @@
                              :energy (reify Resource
                                        (getName [this]
                                          "Energy"))}}]
-      (is (= {}
-             (skynet/world state))))))
+      (is (= {:skynet/pois (),
+              :skynet/team-units [],
+              :skynet/builders-data (),
+              :skynet/metal-details {},
+              :skynet/unit-defs-by-name {},
+              :skynet/unit-defs (),
+              :skynet/unit-defs-by-type {},
+              :skynet/builders (),
+              :skynet/idle-units (),
+              :skynet/unit-def-names-by-type {}}
+             (dissoc
+               (skynet/world state)
+               :skynet/economy))))))

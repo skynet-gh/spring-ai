@@ -3,7 +3,6 @@
     [clojure.core.matrix :as matrix]
     [clojure.datafy :refer [datafy]]
     [clustering.core.qt :as qt]
-    [kdtree]
     [skynet.util :as u])
   (:import
     (com.springrts.ai.oo AIFloat3)))

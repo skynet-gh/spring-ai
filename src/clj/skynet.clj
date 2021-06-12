@@ -9,10 +9,16 @@
     [skynet.strategy.base :as base]
     [skynet.unit :as unit]
     [skynet.util :as u]
-    [taoensso.timbre :as log]))
+    [taoensso.timbre :as log])
+  (:import
+    (com.springrts.ai.oo AIFloat3)
+    (com.springrts.ai.oo.clb Game Map Point OOAICallback Unit)))
 
 
-(defn unit-data [resources unit]
+(set! *warn-on-reflection* true)
+
+
+(defn unit-data [resources ^Unit unit]
   (let [unit-def (.getDef unit)]
     {:name (.getName unit-def)
      :pos (.getPos unit)
@@ -38,7 +44,7 @@
 
 (defn world
   "Returns data about the world obtained from state."
-  [{:keys [callback resources metal-positions metal-clusters] :as state}]
+  [{:keys [^OOAICallback callback resources metal-positions metal-clusters] :as state}]
   (let [map-obj (.getMap callback)
         team-units (.getTeamUnits callback)
         com-name (first
@@ -50,7 +56,7 @@
                        (map
                          (fn [mex]
                            {(.getResourceMapSpotsNearest map-obj (:metal resources) (.getPos mex))
-                            {(.getName (.getdef mex)) mex}}))
+                            {(.getName (.getDef mex)) mex}}))
                        (merge-with merge))
         metal-details (into {}
                         (map
@@ -62,9 +68,10 @@
                   (sort-by (comp (partial u/distance start-pos) :center))
                   (map-indexed
                     (fn [n cluster]
-                      (assoc cluster
-                        :dist-index n
-                        :units (.getFriendlyUnitsIn (:center cluster) math/default-cluster-distance)))))
+                      (let [^AIFloat3 center (:center cluster)]
+                        (assoc cluster
+                          :dist-index n
+                          :units (.getFriendlyUnitsIn callback center math/default-cluster-distance))))))
         filter-side (case com-name
                       "armcom" (fn [d] (string/starts-with? (.getName d) "arm"))
                       "corcom" (fn [d] (string/starts-with? (.getName d) "cor"))
@@ -93,15 +100,15 @@
 
 
 (defn give-commands
-  [{:keys [callback]} {::keys [pois]}]
-  (let [map-obj (.getmap callback)
-        points (.getPoints map-obj)
-        point-poses (set (map #(.getPosition %) points))
-        game (.getGame callback)]
+  [{:keys [^OOAICallback callback]} {::keys [pois]}]
+  (let [^Map map-obj (.getMap callback)
+        points (.getPoints map-obj false)
+        point-poses (set (map (fn [^Point point] (.getPosition point)) points))
+        ^Game game (.getGame callback)]
     (doseq [poi pois]
       (let [center (:center poi)]
         (when-not (contains? point-poses center)
-          (.sendTextMessage game (:poi-dist poi))
+          (.sendTextMessage game (str (:poi-dist poi)) 0)
           (.setLastMessagePosition game center)))))
   (doseq [poi pois]
     (log/debug "POI" (:poi-dist poi) "at" (:center poi))
@@ -118,11 +125,11 @@
     (give-commands state world-data)
     (dorun
       (map
-        (fn [unit]
+        (fn [^Unit unit]
           (log/info "Giving" unit "type" (.getName (.getDef unit)) "a job")
           (old/assign-unit state unit))
         (filter-idle
-          (.getTeamUnits (:callback state)))))))
+          (.getTeamUnits ^OOAICallback (:callback state)))))))
 
 
 (defn init [state]

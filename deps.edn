@@ -3,7 +3,6 @@
  {"local" {:url "file:repo"}}
  :deps
  {aleph {:mvn/version "0.4.6"}
-  clj-kdtree {:mvn/version "1.2.0"}
   clojure.java-time {:mvn/version "0.3.2"}
   com.taoensso/sente {:mvn/version "1.15.0"}
   com.taoensso/timbre {:mvn/version "4.10.0"}

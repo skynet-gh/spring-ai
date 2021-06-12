@@ -1,6 +1,6 @@
 (ns skynet.unit
   (:import
-    (clojure.lang Keyword) 
+    (clojure.lang Keyword)
     (com.springrts.ai.oo.clb Unit UnitDef)))
 
 
@@ -68,6 +68,9 @@
 
 (defmethod typeof "corpun" [_defname]
   ::coastal)
+
+(defmethod typeof :default [_defname]
+  nil)
 
 
 (defmulti nameof (fn [side kw] [side kw]))
