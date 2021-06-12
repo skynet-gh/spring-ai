@@ -320,4 +320,5 @@
     (when-let [chimer (-> (.state this) deref :chimer)]
       (log/info "Stopping async job")
       (.close chimer))
-    0))
+    0)
+  0)

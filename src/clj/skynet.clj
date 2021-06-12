@@ -20,14 +20,13 @@
 
 (def tick-millis 500)
 
-(def default-timeout 10000)
-(def fight-timeout 10000)
+(def default-timeout 100000)
 
 
 (def min-build-dists
-  {::unit/lab 50
-   ::unit/llt 30
-   ::unit/hlt 30
+  {::unit/lab 40
+   ::unit/llt 20
+   ::unit/hlt 20
    ::unit/coastal 30
    ::unit/converter 5})
 
@@ -168,6 +167,8 @@
           (when-let [next-poi (rand-nth (vec pois))]
             (log/debug "Unit" unit "(" (unit/typeof unit) ") is not in a POI"
                        "sending it to fight at a random POI" (:poi-dist next-poi))
+            (.moveTo unit (:center next-poi) (short 0) default-timeout)
+            #_
             (if (pos? (rand-int 2))
               (.fight unit (:center next-poi) (short 0) fight-timeout)
               (.attackArea unit (:center next-poi) math/default-cluster-distance (short 0) fight-timeout)))
@@ -192,9 +193,7 @@
                              :else
                              nil)
                 build-def (get unit-defs-by-type build-type)
-                min-dist (or
-                           (get min-build-dists build-type)
-                           0)
+                min-dist (or (get min-build-dists build-type) 1)
                 metal-radius (.getExtractorRadius map-obj (:metal resources))
                 build-pos (cond
                             (= ::unit/mex build-type)
@@ -220,6 +219,8 @@
         (doseq [^Unit unit fighters]
           (when-let [next-poi (rand-nth (vec pois))]
             (log/debug "Unit" unit "(" (unit/typeof unit) ") sent to fight at POI" (:poi-dist next-poi))
+            (.moveTo unit (:center next-poi) (short 0) default-timeout)
+            #_
             (if (pos? (rand-int 2))
               (.fight unit (:center next-poi) (short 0) fight-timeout)
               (.attackArea unit (:center next-poi) math/default-cluster-distance (short 0) fight-timeout))))))))
