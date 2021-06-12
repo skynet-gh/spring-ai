@@ -188,7 +188,8 @@
             _ (info (count team-units) "units on team")
             _ (info (str "Economy data \n" (pprint-str economy)))
             _ (info "Metal income ratio to pull is" metal-income-ratio "vs energy income ratio" energy-income-ratio)
-            should-build-metal (<= metal-income-ratio energy-income-ratio)
+            should-build-metal (and (not= "armcom" unitdefname)
+                                    (<= metal-income-ratio energy-income-ratio))
             map-obj (.getMap callback)
             unitpos (.getPos unit)
             metal-spot (when should-build-metal
@@ -205,28 +206,25 @@
                                 (map #(.findClosestBuildSite map-obj builddef % mex-search 0 0))
                                 (filter #(.isPossibleToBuildAt map-obj builddef % 0))
                                 first)))
-            should-build-metal-storage (and (= "armck" unitdefname) (sharing? metal))
-            should-build-energy-storage (and (= "armck" unitdefname) (sharing? energy))
-            should-build-converter (< 70 (:excess energy))
+            should-build-metal-storage (and (#{"armcom" "armck"} unitdefname) (sharing? metal))
+            should-build-energy-storage (and (#{"armcom" "armck"} unitdefname) (sharing? energy))
+            should-build-converter (or should-build-energy-storage
+                                       (pos? (- (:income energy) (:pull energy))))
             kbot-lab (first (filter (comp #{"armlab"} #(.getName %) #(.getDef %)) team-units))
             akbot-lab (first (filter (comp #{"armalab"} #(.getName %) #(.getDef %)) team-units))
             buildname (cond
-                        (not kbot-lab)
-                        "armlab"
-                        (and (not akbot-lab) (= "armck" unitdefname))
-                        "armalab"
-                        should-build-energy-storage
-                        "armestor"
-                        should-build-metal-storage
-                        "armmstor"
-                        should-build-converter
-                        (if (= "armack" unitdefname)
-                          "armmmkr"
-                          "armmakr")
                         (and should-build-metal metal-spot)
                         (if (= "armack" unitdefname)
                           "armmoho"
                           "armmex")
+                        (not kbot-lab) "armlab"
+                        (and (not akbot-lab) (= "armck" unitdefname)) "armalab"
+                        should-build-converter
+                        (if (= "armack" unitdefname)
+                          "armmmkr"
+                          "armmakr")
+                        should-build-energy-storage "armestor"
+                        should-build-metal-storage "armmstor"
                         :else
                         (case unitdefname
                           "armcom"
@@ -279,7 +277,7 @@
     (info "Unit" (str "'" (.. unit (getDef) (getName)) "'") "damaged by"
           (when attacker
             (when-let [attackerdef (.getDef attacker)]
-              (.getName attackerdef)))
+              (str "'" (.getName attackerdef) "'")))
           "for" damage "from" direction "using" weapon-def ", paralyzer" paralyzer)
     0))
 
@@ -309,7 +307,7 @@
   (try-log "enemyEnterRadar"
     (info "Enemy" (when enemy
                     (when-let [enemydef (.getDef enemy)]
-                      "'" (.getName enemydef) "'"))
+                      (str "'" (.getName enemydef) "'")))
           "entered radar")
     0))
 
