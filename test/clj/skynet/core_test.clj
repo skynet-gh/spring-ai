@@ -16,6 +16,10 @@
 (deftest ai-init
   (let [logs (atom [])
         callback (reify AICallback
+                   (DataDirs_getConfigDir [this]
+                     ".")
+                   (DataDirs_getWriteableDir [this]
+                     ".")
                    (DataDirs_allocatePath [this path _ _ _ _]
                      test-logfile)
                    (Log_log [this message]

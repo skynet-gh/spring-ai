@@ -1,12 +1,9 @@
 (ns skynet.oo
   (:require
-    [clojure.pprint :refer [pprint]]
-    [clojure.string :as string]
-    [taoensso.timbre :as timbre :refer [trace debug info warn error fatal]]
+    [skynet]
+    [skynet.util :as u]
+    [taoensso.timbre :as log]
     [taoensso.timbre.appenders.core :as appenders])
-  (:import
-    (com.springrts.ai.oo AbstractOOAI AIFloat3 OOAI)
-    (com.springrts.ai.oo.clb OOAICallback))
   (:gen-class
     :extends com.springrts.ai.oo.AbstractOOAI
     :init constructor
@@ -25,53 +22,16 @@
    6 "connection lost"
    7 "other reason"})
 
-(def build-timeout 10000)
-(def min-build-dist 5)
-(def min-build-dists
-  {"armcom" 20
-   "armck" 30
-   "armack" 10})
-(def build-dist-override
-  {"armmakr" 40
-   "armnanotc" 5})
-
-(def guard-a-lab-chance 0) ;0.01)
-(def repair-something-chance 0.5)
-(def help-build-something-chance 0.50)
-(def t2-help-build-something-chance 0) ;0.10)
-
-
-(defn pprint-str [d]
-  (with-out-str
-    (pprint d)))
-
-(defmacro try-log
-  "Try to execute body, catch Throwable, and log it."
-  [fn-name & body]
-  `(try
-     ~@body
-     (catch Throwable e#
-       (error e# (str "Error in " ~fn-name))
-       -1)))
-
-
-(defn distance
-  "Calculates the distance between two (AIFloat3) points."
-  [a b]
-  (let [xd (- (.x a) (.x b))
-        yd (- (.y a) (.y b))
-        zd (- (.z a) (.z b))]
-    (+ (* xd xd) (* yd yd) (* zd zd))))
 
 (defn discover-resources [state-atom callback]
-  (info "Discovering resource positions")
+  (log/info "Discovering resource positions")
   (let [resources (.getResources callback)
-        _ (debug "Resources" resources)
-        _ (debug "Resource names" (pr-str (map #(.getName %) resources)))
+        _ (log/debug "Resources" resources)
+        _ (log/debug "Resource names" (pr-str (map #(.getName %) resources)))
         metalres (first (filter (comp #{"Metal"} #(.getName %)) resources))
-        _ (debug "Got metal res" metalres)
+        _ (log/debug "Got metal res" metalres)
         energyres (first (filter (comp #{"Energy"} #(.getName %)) resources))
-        _ (debug "Got energy res" energyres)
+        _ (log/debug "Got energy res" energyres)
         map-obj (.getMap callback)
         metal-spots (seq (.getResourceMapSpotsPositions map-obj metalres))
         energy-spots (seq (.getResourceMapSpotsPositions map-obj energyres))
@@ -85,322 +45,91 @@
                    :min-wind min-wind
                    :avg-wind avg-wind
                    :max-wind max-wind}]
-    (info "Metal spots" (pr-str metal-spots))
-    (info "Energy spots" (pr-str energy-spots))
+    (log/info "Metal spots" (pr-str metal-spots))
+    (log/info "Energy spots" (pr-str energy-spots))
     (swap! state-atom merge resources)
-    (debug "Finished discovering resourses")
+    (log/debug "Finished discovering resourses")
     resources))
 
 
 (defn ai-constructor []
-  [[] (atom {:units #{}})])
+  [[] (atom {})])
 
 (defn ai-init [this skirmish-ai-id callback]
   (.. callback (getLog) (log "clojure init"))
   (let [now (System/currentTimeMillis)
         skirmish-ai (.getSkirmishAI callback)
         team-id (.getTeamId skirmish-ai)
-        fname (str "log-" team-id "-" now ".txt")
+        fname (str "log-" now ".txt")
         data-dirs (.getDataDirs callback)
         logfile (.allocatePath data-dirs fname true true false false)]
     (.. callback (getLog) (log (str "logging to " logfile)))
-    (timbre/merge-config!
+    (log/merge-config!
       {:appenders
        {:println {:enabled? false}
-        :spit (appenders/spit-appender {:fname logfile :min-level :debug})}})
-    (try-log "init"
-      (debug "Configured logging")
-      (debug "Config dir" (.getConfigDir data-dirs))
-      (debug "Writeable dir" (.getWriteableDir data-dirs))
-      (debug "Classpath" (System/getProperty "java.class.path"))
+        :spit (appenders/spit-appender {:fname logfile :min-level :debug})}
+       :output-fn (partial log/default-output-fn {:stacktrace-fonts {}})})
+    (u/try-log "init"
+      (log/debug "Configured logging")
+      (log/debug "Config dir" (.getConfigDir data-dirs))
+      (log/debug "Writeable dir" (.getWriteableDir data-dirs))
+      (log/debug "Classpath" (System/getProperty "java.class.path"))
       (swap! (.state this) assoc :skirmish-ai-id skirmish-ai-id :callback callback :started now)
-      (info "Initial state" @(.state this))
-      (info "Id" skirmish-ai-id "team" team-id)
+      (log/info "Initial state" @(.state this))
+      (log/info "Id" skirmish-ai-id "team" team-id)
       (let [info-api (.getInfo skirmish-ai)
             ids (range (.getSize info-api))
             info-data (zipmap (map #(.getKey info-api %) ids)
                               (map #(.getValue info-api %) ids))]
         (swap! (.state this) assoc :info info-data)
-        (info "Info map" info-data))
+        (log/info "Info map" info-data))
       (let [option-values (.getOptionValues skirmish-ai)
             ids (range (.getSize option-values))
             options (zipmap (map #(.getKey option-values %) ids)
                             (map #(.getValue option-values %) ids))]
         (swap! (.state this) assoc :options options)
-        (info "Options map" options))
+        (log/info "Options map" options))
       (let [{:keys [resources]} (discover-resources (.state this) callback)
             unit-defs (.getUnitDefs callback)
             unit-defs-by-name (into {}
                                 (map (juxt #(.getName %) identity)
                                      unit-defs))]
-        (info (str "Got " (count unit-defs) " unit defs \n"
-                   (pprint-str
-                     (->> unit-defs
-                          (mapv (fn [d] {:name (.getName d)
-                                         :human-name (.getHumanName d)
-                                         :tooltip (.getTooltip d)
-                                         ;:tech-level (.getTechLevel d)  y u no work
-                                         :metal-cost (.getCost d (:metal resources))
-                                         :energy-cost (.getCost d (:energy resources))}))
-                          (sort-by :name)))))
+        (log/info
+          (str "Got " (count unit-defs) " unit defs \n"
+               (u/pprint-str
+                 (->> unit-defs
+                      (mapv (fn [d] {:name (.getName d)
+                                     :human-name (.getHumanName d)
+                                     :tooltip (.getTooltip d)
+                                     ;:tech-level (.getTechLevel d)  y u no work
+                                     :metal-cost (.getCost d (:metal resources))
+                                     :energy-cost (.getCost d (:energy resources))}))
+                      (sort-by :name)))))
         (swap! (.state this) assoc :unit-defs unit-defs :unit-defs-by-name unit-defs-by-name))
-      (info "Init finished")
+      (swap! (.state this) assoc :chimer (skynet/init (.state this)))
+      (log/info "Init finished")
       0)))
 
-(defn economy-resource
-  "Returns economy data for the given resource."
-  [economy resource]
-  {:current (.getCurrent economy resource)
-   :excess (.getExcess economy resource)
-   :income (.getIncome economy resource)
-   :pull (.getPull economy resource)
-   :received (.getReceived economy resource)
-   :sent (.getSent economy resource)
-   :share (.getShare economy resource)
-   :storage (.getStorage economy resource)
-   :usage (.getUsage economy resource)})
 
-(defn economy
-  "Returns all economy data"
-  [{:keys [callback resources] :as state}]
-  (let [economy (.getEconomy callback)
-        {:keys [metal energy]} resources]
-     {:metal (economy-resource economy metal)
-      :energy (economy-resource economy energy)}))
-
-(defn income-ratio
-  "Returns ratio of resource income to pull, zero if no pull."
-  [{:keys [income pull]}]
-  (if (zero? pull)
-    0
-    (/ income pull)))
-
-(defn sharing?
-  "Returns true if the resource is at the share threshold."
-  [{:keys [current share storage]}]
-  (< share (/ current storage)))
-
-
-(def t1-kbots
-  ["armck" "armpw" "armham" "armrock" "armwar"])
-
-(def t2-kbots
-  ["armack" "armfido" "armfboy"])
-
-(def t3-kbots
-  ["armbanth"])
-
-(def any-combat
-  (disj
-    (set
-      (concat
-        t1-kbots
-        t2-kbots
-        t3-kbots))
-    "armck" "armack"))
-
-(defn build-something
-  [this unit {:keys [callback] :as state} team-units unitdefname]
-  (let [{:keys [avg-wind resources metal-spots]} state
-        {:keys [metal energy] :as economy} (economy state)
-        metal-income-ratio (income-ratio metal)
-        energy-income-ratio (income-ratio energy)
-        _ (info (count team-units) "units on team")
-        _ (info (str "Economy data \n" (pprint-str economy)))
-        _ (info "Metal income ratio to pull is" metal-income-ratio "vs energy income ratio" energy-income-ratio)
-        should-build-metal (and (not= "armcom" unitdefname)
-                                (<= metal-income-ratio energy-income-ratio))
-        map-obj (.getMap callback)
-        unitpos (.getPos unit)
-        metal-spot (let [metal-radius (.getExtractorRadius map-obj (:metal resources))
-                         buildname (if (= "armack" unitdefname)
-                                      "armmoho"
-                                      "armmex")
-                         builddef (.. callback (getUnitDefByName buildname))
-                         mex-search (if (= "armack" unitdefname) 50 10)]
-                     (debug "Metal radius is" metal-radius)
-                     (->> metal-spots
-                          (sort-by (fn [p] (distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
-                          (map #(.findClosestBuildSite map-obj builddef % mex-search 0 0))
-                          (filter #(.isPossibleToBuildAt map-obj builddef % 0))
-                          first))
-        should-build-metal-storage (and (#{"armcom" "armck"} unitdefname) (sharing? metal))
-        should-build-energy-storage (and (#{"armcom" "armck"} unitdefname)
-                                         (or (sharing? energy)
-                                             (< (:storage energy) (* (:income energy) 5))))
-        should-build-converter (or should-build-energy-storage
-                                   (pos? (- (:income energy) (:pull energy))))
-        mex (first (filter (comp #{"armmex"} #(.getName %) #(.getDef %)) team-units))
-        kbot-labs (filter (comp #{"armlab"} #(.getName %) #(.getDef %)) team-units)
-        kbot-lab (first kbot-labs)
-        akbot-labs (filter (comp #{"armalab"} #(.getName %) #(.getDef %)) team-units)
-        akbot-lab (first akbot-labs)
-        gantry (first (filter (comp #{"armshltx"} #(.getName %) #(.getDef %)) team-units))
-        buildname (cond
-                    (and (not mex) metal-spot)
-                    (if (= "armack" unitdefname)
-                      "armmoho"
-                      "armmex")
-                    (or (not kbot-lab)
-                        (< (count kbot-labs)
-                           (quot (:income metal) 20)))
-                    "armlab"
-                    (and should-build-metal metal-spot)
-                    (if (= "armack" unitdefname)
-                      "armmoho"
-                      "armmex")
-                    (or (< (count akbot-labs)
-                           (quot (:income metal) 50))
-                        (and (not akbot-lab)
-                             (or (< 20 (:income metal)) (< 1000 (:current metal)))
-                             (or (< 500 (:income energy)) (< 5000 (:current energy)))
-                             (= "armck" unitdefname)))
-                    "armalab"
-                    (and (not gantry)
-                         (or (< 100 (:income metal)) (< 5000 (:current metal)))
-                         (or (< 2000 (:income energy)) (< 10000 (:current energy)))
-                         (= "armack" unitdefname))
-                    "armshltx"
-                    (and (= "armck" unitdefname)
-                         (sharing? metal))
-                    "armnanotc"
-                    should-build-converter
-                    (if (= "armack" unitdefname)
-                      "armmmkr"
-                      "armmakr")
-                    should-build-energy-storage "armestor"
-                    should-build-metal-storage "armmstor"
-                    :else
-                    (case unitdefname
-                      "armcom"
-                      (if (< avg-wind 5)
-                        "armsolar"
-                        (rand-nth ["armsolar" "armwin"]))
-                      "armck"
-                      "armadvsol"
-                      "armack"
-                      "armfus"))
-        builddef (.. callback (getUnitDefByName buildname))
-        _ (when-not builddef
-            (warn "Unable to find unit definition for" buildname))
-        build-dist (get min-build-dists unitdefname
-                        (get build-dist-override buildname min-build-dist))
-        source-pos (or (when (= "armnanotc" buildname) 
-                         (cond
-                           gantry (.getPos gantry)
-                           akbot-lab (.getPos kbot-lab)
-                           kbot-lab (.getPos kbot-lab)))
-                       unitpos)
-        pos (or (when should-build-metal metal-spot)
-                (.findClosestBuildSite map-obj builddef source-pos 5000 build-dist 0))]
-    (info "Building" (.getName builddef) "with" unitdefname "at" pos)
-    (.build unit builddef pos 0 (short 0) build-timeout)))
-
-(defn guard-a-lab [this unit state team-units]
-  (let [targets (filterv (comp #{"armlab" "armalab" "armshltx"} #(.getName %) #(.getDef %)) team-units)]
-    (if (seq targets)
-      (do
-        (.guard unit (rand-nth targets) (short 0) Integer/MAX_VALUE)
-        true)
-      false)))
-
-(defn repair-something [this unit state team-units]
-  (let [needs-repair (filterv (fn [u]
-                                (< (.getHealth u) (.getMaxHealth u)))
-                              team-units)]
-    (if (seq needs-repair)
-      (do
-        (.repair unit (rand-nth needs-repair) (short 0) Integer/MAX_VALUE)
-        true)
-      false)))
-
-(defn help-build-something [this unit state team-units]
-  (let [building (filterv #(.isBeingBuilt %) team-units)]
-    (if (seq building)
-      (do
-        (.repair unit (rand-nth building) (short 0) Integer/MAX_VALUE)
-        true)
-      false)))
-
-
-(defn assign-unit
-  "A unit has finished being constructed, or is now idle. Attempt to do something with it."
-  [this unit]
-  (let [unitdefname (.. unit (getDef) (getName))
-        {:keys [callback] :as state} @(.state this)
-        team-units (.getTeamUnits callback)
-        {:keys [metal energy] :as economy} (economy state)
-        ckbot (first (filter (comp #{"armck"} #(.getName %) #(.getDef %)) team-units))
-        ackbot (first (filter (comp #{"armack"} #(.getName %) #(.getDef %)) team-units))]
-    (cond
-      (#{"armlab"} unitdefname)
-      (let [buildname (if (and ckbot (not (sharing? metal)))
-                        (rand-nth t1-kbots)
-                        "armck")
-            builddef (.. callback (getUnitDefByName buildname))
-            unitpos (.getPos unit)]
-        (info "Building" builddef "(" buildname ") with" unitdefname "at" unitpos)
-        (.build unit builddef unitpos 0 (short 0) build-timeout))
-      (#{"armalab"} unitdefname)
-      (let [buildname (if (and ackbot (not (sharing? metal)))
-                        (rand-nth t2-kbots)
-                        "armack")
-            builddef (.. callback (getUnitDefByName buildname))
-            unitpos (.getPos unit)]
-        (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
-        (.build unit builddef unitpos 0 (short 0) build-timeout))
-      (#{"armshltx"} unitdefname)
-      (let [buildname (rand-nth t3-kbots)
-            builddef (.. callback (getUnitDefByName buildname))
-            unitpos (.getPos unit)]
-        (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
-        (.build unit builddef unitpos 0 (short 0) build-timeout))
-      (#{"armcom" "armck"} unitdefname)
-      (if (or (> (rand) help-build-something-chance)
-              (not (help-build-something this unit state team-units)))
-        (if-not ackbot
-          (build-something this unit state team-units unitdefname)
-          (help-build-something this unit state team-units)))
-      (#{"armack"} unitdefname)
-      (if (or (> (rand) t2-help-build-something-chance)
-              (not (help-build-something this unit state team-units)))
-        (if (> (rand) guard-a-lab-chance)
-          (build-something this unit state team-units unitdefname)
-          (guard-a-lab this unit state team-units)))
-      (any-combat unitdefname) ; attack something
-      (let [enemies (.getEnemyUnitsInRadarAndLos callback)
-            map-obj (.getMap callback)
-            unitpos (.getPos unit)
-            closest-enemy (->> enemies
-                               (sort-by (comp (partial distance unitpos) #(.getPos %)))
-                               first)]
-        (if closest-enemy
-          (.attack unit closest-enemy (short 0) Integer/MAX_VALUE)
-          (debug "No enemies")))
-      :else
-      nil)))
-
-
-
-(defn ai-unitFinished [this unit]
-  (try-log "unitFinished"
+(defn ai-unitFinished [_this unit]
+  (u/try-log "unitFinished"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (debug "Unit" (str "'" unitdefname "'") "finished")
-      (assign-unit this unit))
+      (log/debug "Unit" (str "'" unitdefname "'") "finished"))
+      ;(old/assign-unit this unit))
     0))
 
 
-(defn ai-unitIdle [this unit]
-  (try-log "unitIdle"
+(defn ai-unitIdle [_this unit]
+  (u/try-log "unitIdle"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (info "Unit" (str "'" unitdefname "'") "idle")
-      (assign-unit this unit))
+      (log/info "Unit" (str "'" unitdefname "'") "idle"))
+      ;(old/assign-unit this unit))
     0))
 
-(defn ai-unitCreated [this unit builder]
+(defn ai-unitCreated [_this _unit _builder]
   0
   #_
-  (try-log "unitCreated"
+  (u/try-log "unitCreated"
     (let [unitdefname (.. unit (getDef) (getName))]
       (info "Unit" (str "'" unitdefname "'") "built by"
             (when builder
@@ -408,14 +137,14 @@
                 (str "'" (.getName builderdef) "'")))))
     0))
 
-(defn ai-unitMoveFailed [this unit]
-  (try-log "unitMoveFailed"
+(defn ai-unitMoveFailed [_this unit]
+  (u/try-log "unitMoveFailed"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (info "Unit" (str "'" unitdefname "'") "move failed")
-      (assign-unit this unit))
+      (log/info "Unit" (str "'" unitdefname "'") "move failed"))
+      ;(old/assign-unit this unit))
     0))
 
-(defn ai-unitDamaged [this unit attacker damage direction weapon-def paralyzer]
+(defn ai-unitDamaged [_this _unit _attacker _damage _direction _weapon-def _paralyzer]
   0
   #_
   (try-log "unitDamaged"
@@ -426,7 +155,7 @@
            "for" damage "from" direction "using" weapon-def ", paralyzer" paralyzer)
     0))
 
-(defn ai-unitDestroyed [unit attacker]
+(defn ai-unitDestroyed [_unit _attacker]
   0
   #_
   (try-log "unitDestroyed"
@@ -440,7 +169,7 @@
                 (str "'" (.getName attackerdef) "'"))))
     0))
 
-(defn ai-enemyDamaged [this enemy attacker damage direction weapon-def paralyzer]
+(defn ai-enemyDamaged [_this _enemy _attacker _damage _direction _weapon-def _paralyzer]
   0
   #_
   (try-log "enemyDamaged"
@@ -456,7 +185,7 @@
            "from" direction "using" weapon-def ", paralyzer" paralyzer)
     0))
 
-(defn ai-enemyDestroyed [this enemy attacker]
+(defn ai-enemyDestroyed [_this _enemy _attacker]
   0
   #_
   (try-log "enemyDestroyed"
@@ -470,7 +199,7 @@
               (.getName attackerdef))))
     0))
 
-(defn ai-enemyEnterRadar [this enemy]
+(defn ai-enemyEnterRadar [_this _enemy]
   0
   #_
   (try-log "enemyEnterRadar"
@@ -480,7 +209,7 @@
           "entered radar")
     0))
 
-(defn ai-enemyLeaveRadar [this enemy]
+(defn ai-enemyLeaveRadar [_this _enemy]
   0
   #_
   (try-log "enemyLeaveRadar"
@@ -491,7 +220,7 @@
           "left radar")
     0))
 
-(defn ai-enemyEnterLOS [this enemy]
+(defn ai-enemyEnterLOS [_this _enemy]
   0
   #_
   (try-log "enemyEnterLOS"
@@ -499,7 +228,7 @@
       (info "Enemy" (str "'" enemydefname "'") "entered LOS"))
     0))
 
-(defn ai-enemyLeaveLOS [this enemy]
+(defn ai-enemyLeaveLOS [_this _enemy]
   0
   #_
   (try-log "enemyLeaveLOS"
@@ -507,7 +236,7 @@
       (info "Enemy" (str "'" enemydefname "'") "left LOS"))
     0))
 
-(defn ai-enemyCreated [this enemy]
+(defn ai-enemyCreated [_this _enemy]
   0
   #_
   (try-log "enemyCreated"
@@ -515,7 +244,7 @@
       (info "Enemy" (str "'" enemydefname "'") "created"))
     0))
 
-(defn ai-enemyFinished [this enemy]
+(defn ai-enemyFinished [_this _enemy]
   0
   #_
   (try-log "enemyFinished"
@@ -523,50 +252,41 @@
       (info "Enemy" (str "'" enemydefname "'") "finished"))
     0))
 
-(defn ai-weaponFired [this unit weapon-def]
-  (try-log "weaponFired"
+(defn ai-weaponFired [_this unit weapon-def]
+  (u/try-log "weaponFired"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (trace "Unit" (str "'" unitdefname "'") "fired weapon" weapon-def))
+      (log/trace "Unit" (str "'" unitdefname "'") "fired weapon" weapon-def))
     0))
 
-(defn ai-playerCommand [this units command-topic-id player-id]
-  (try-log "playerCommand"
-    (info "Player" player-id "gave command" command-topic-id "to" (count units) "units")
+(defn ai-playerCommand [_this units command-topic-id player-id]
+  (u/try-log "playerCommand"
+    (log/info "Player" player-id "gave command" command-topic-id "to" (count units) "units")
     0))
 
-(defn ai-commandFinished [this unit command-id command-topic-id]
-  (try-log "commandFinished"
+(defn ai-commandFinished [_this unit command-id command-topic-id]
+  (u/try-log "commandFinished"
     (let [unitdefname (.. unit (getDef) (getName))]
-      (info "Command" command-id "topic" command-topic-id "for unit" (str "'" unitdefname "'") "finished"))
+      (log/info "Command" command-id "topic" command-topic-id "for unit" (str "'" unitdefname "'") "finished"))
     0))
 
-(defn ai-seismicPing [this pos strength]
-  (try-log "seismicPing"
-    (info "Seismic ping at" pos "strength" strength)
+(defn ai-seismicPing [_this pos strength]
+  (u/try-log "seismicPing"
+    (log/info "Seismic ping at" pos "strength" strength)
     0))
 
-(defn ai-message [this player message]
-  (try-log "message"
-    (info "Player" player "sent message" (str "'" message "'"))
+(defn ai-message [_this player message]
+  (u/try-log "message"
+    (log/info "Player" player "sent message" (str "'" message "'"))
     0))
 
-(defn ai-update [this frame]
-  (try-log "update"
-    (when (= 0 (mod frame 1000))
-      (info "Handling update" frame)
-      (info "Looking for idle units")
-      (let [{:keys [callback] :as state} @(.state this)
-            team-units (.getTeamUnits callback)
-            idle-units (filter (comp empty? #(.getCurrentCommands %)) team-units)]
-        (dorun
-          (map
-            (fn [unit]
-              (info "Giving" unit "a job")
-              (assign-unit this unit))
-            (take 100 idle-units)))))
+(defn ai-update [_this _frame]
+  (u/try-log "update"
     0))
 
 (defn ai-release [this reason-code]
-  (try-log "release"
-    (info "Releasing due to code" reason-code "which means" (get release-reason reason-code "n/a"))
+  (u/try-log "release"
+    (log/info "Releasing due to code" reason-code "which means" (get release-reason reason-code "n/a"))
+    (when-let [chimer (-> (.state this) deref :chimer)]
+      (log/info "Stopping async job")
+      (.close chimer))
     0))

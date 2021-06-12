@@ -2,12 +2,24 @@
   :source-paths ["src/clj"]
   :test-paths ["test/clj"]
   :java-source-paths ["src/java"]
-  :dependencies [[com.taoensso/timbre "4.10.0"]
+  :dependencies [[aleph "0.4.6"]
+                 [clojure.java-time "0.3.2"]
+                 [com.taoensso/sente "1.15.0"]
+                 [com.taoensso/timbre "4.10.0"]
                  [com.springrts/ai-interface-java "0.1"]
                  [com.springrts/ai-interface-javaoo "0.1"]
-                 [org.clojure/clojure "1.10.1"]
-                 [javax.vecmath/vecmath "1.5.2"]]
-  :plugins [[lein-localrepo "0.5.4"]]
+                 [compojure "1.6.2"]
+                 [jarohen/chime "0.3.2"]
+                 [org.clojure/clojure "1.10.2-alpha1"]
+                 [org.clojure/core.async "1.3.610"]
+                 [org.clojure/spec.alpha "0.2.187"]
+                 [javax.vecmath/vecmath "1.5.2"]
+                 [ring/ring-anti-forgery "1.3.0"]
+                 [ring/ring-core "1.8.1"]]
+  :plugins [[lein-localrepo "0.5.4"]
+            [com.jakemccrary/lein-test-refresh "0.24.1"]]
+  :test-refresh {:changes-only true
+                 :quiet false}
   :aot :all
   :uberjar-name "SkirmishAI.jar"
   :repositories {"local" "file:repo"}
