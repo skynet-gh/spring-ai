@@ -18,7 +18,7 @@
 (set! *warn-on-reflection* true)
 
 
-(def default-build-timeout 10000)
+(def default-timeout 10000)
 
 
 (defn unit-data [resources ^Unit unit]
@@ -103,11 +103,12 @@
 
 
 (defn give-commands
-  [{:keys [^OOAICallback callback]} {::keys [pois unit-defs-by-type]}]
+  [{:keys [^OOAICallback callback]} {::keys [pois unit-defs-by-type metal-details]}]
   (let [^Map map-obj (.getMap callback)
         points (.getPoints map-obj false)
         _point-poses (set (map (fn [^Point point] (.getPosition point)) points))
         ^Game game (.getGame callback)]
+    #_ ; does nothing
     (doseq [poi pois]
       (let [center (:center poi)
             zone (rand-int 256)] ; why
@@ -116,14 +117,28 @@
     (doseq [poi pois]
       (log/debug "POI" (:poi-dist poi) "at" (:center poi))
       (let [next-build-type (base/next-building poi)
-            idle-units (filter-idle (:units poi))]
-        (when-let [build-def (get unit-defs-by-type next-build-type)]
-          (let [build-pos (.findClosestBuildSite map-obj build-def (:center poi) math/default-cluster-distance 0 0)]
-            (doseq [^Unit unit (filter (comp #(.isBuilder %) #(.getDef %)) idle-units)]
+            idle-units (filter-idle (:units poi))
+            build-def (get unit-defs-by-type next-build-type)
+            build-pos (cond
+                        (= ::unit/mex next-build-type)
+                        (->> poi
+                             :positions 
+                             (remove (comp ::mexes metal-details))
+                             (filter #(.isPossibleToBuildAt map-obj build-def % 0))
+                             first)
+                        build-def
+                        (.findClosestBuildSite map-obj build-def (:center poi) math/default-cluster-distance 0 0)
+                        :else 
+                        nil)]
+        (doseq [^Unit unit (filter (comp #(.isBuilder %) #(.getDef %)) idle-units)]
+          (if build-def
+            (do
               (log/debug "Unit" unit "which is an" (unit/def-name unit) "which is type" (unit/typeof unit)
                          "should build" next-build-type)
-              (.build unit build-def build-pos 0 (short 0) default-build-timeout))))))))
-
+              (.build unit build-def build-pos 0 (short 0) default-timeout))
+            (when-let [next-poi (first (filter #(< (:poi-dist poi) (:poi-dist %)) pois))]
+              (log/debug "Unit" unit "moving to POI" (:poi-dist next-poi))
+              (.moveTo unit (:center next-poi) (short 0) default-timeout))))))))
 
 
 (defn run [state-atom]

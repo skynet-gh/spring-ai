@@ -7,10 +7,12 @@
   {:base
    [{:name "start"
      :buildings
-     [[::u/solar 2]
+     [[::u/solar 1]
       [::u/kbot-lab 1]
+      [::u/solar 1]
       [::u/radar 1]
-      [::u/llt 1]]}]
+      [::u/llt 1]
+      [::u/solar 1]]}]
    :forward
    [{:name "defense"
      :buildings
@@ -41,13 +43,16 @@
       (let [phases (poi-phases poi)
             phase (first phases)] ; TODO
         (reduce
-          (fn [remaining [building n]]
-            (if (keyword? remaining)
-              remaining
-              (let [matching (filter (comp #{building} u/typeof second) remaining)]
+          (fn [result [building n]]
+            (if (keyword? result)
+              result
+              (let [matching (filter (comp #{building} u/typeof second) result)
+                    remaining (apply dissoc result (map first (take n matching)))]
                 (if (< (count matching) n)
                   building
-                  (apply dissoc remaining (map first (take n matching)))))))
+                  (if (empty? remaining)
+                    nil
+                    remaining)))))
           (into {}
             (map-indexed vector (remove (comp #{::u/mex} u/typeof) units)))
           (:buildings phase))))))

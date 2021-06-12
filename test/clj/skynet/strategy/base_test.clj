@@ -29,14 +29,6 @@
             :units ["armmex"
                     "armmex"
                     "armmex"]})))
-  (is (= :skynet.unit/solar
-         (base/next-building
-           {:poi-dist 0
-            :positions (map math/float3 [[0 1 2] [3 4 5] [6 7 8]])
-            :units ["armmex"
-                    "armmex"
-                    "armmex"
-                    "armsolar"]})))
   (is (= :skynet.unit/kbot-lab
          (base/next-building
            {:poi-dist 0
@@ -44,8 +36,16 @@
             :units ["armmex"
                     "armmex"
                     "armmex"
-                    "armsolar"
                     "armsolar"]})))
+  (is (= :skynet.unit/solar
+         (base/next-building
+           {:poi-dist 0
+            :positions (map math/float3 [[0 1 2] [3 4 5] [6 7 8]])
+            :units ["armmex"
+                    "armmex"
+                    "armmex"
+                    "armsolar"
+                    "armlab"]})))
   (is (= :skynet.unit/llt
          (base/next-building
            {:poi-dist 1

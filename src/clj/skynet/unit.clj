@@ -46,10 +46,10 @@
   ::kbot-lab)
 
 (defmethod typeof "armrad" [_defname]
-  ::rad)
+  ::radar)
 
 (defmethod typeof "corrad" [_defname]
-  ::rad)
+  ::radar)
 
 (defmethod typeof "armllt" [_defname]
   ::llt)
