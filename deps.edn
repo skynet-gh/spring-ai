@@ -1,0 +1,19 @@
+{:paths ["src/clj" "test/clj"]
+ :deps
+ {com.taoensso/timbre {:mvn/version "4.10.0"}
+  ; local
+  spring-ai {:local/root "lib/AIInterface.jar"}}
+ :aliases
+ {:nrepl
+  {:extra-deps
+   {cider/cider-nrepl {:mvn/version "0.25.2"}
+    nrepl {:mvn/version "0.7.0"}
+    org.clojure/tools.namespace {:mvn/version "1.0.0"}}
+   :main-opts ["--main" "nrepl.cmdline"
+               ; TODO other cider middleware
+               "--middleware" "[cider.nrepl/cider-middleware,cider.nrepl/wrap-refresh]"
+               "--interactive"]}
+  :cambada
+  {:extra-deps
+   {luchiniatwork/cambada
+    {:mvn/version "1.0.2"}}}}}
