@@ -3,7 +3,9 @@
  {"local" {:url "file:repo"}}
  :deps
  {com.taoensso/timbre {:mvn/version "4.10.0"}
-  com.springrts/ai-interface-java {:mvn/version "0.1"}}
+  com.springrts/ai-interface-java {:mvn/version "0.1"}
+  com.springrts/ai-interface-javaoo {:mvn/version "0.1"}
+  javax.vecmath/vecmath {:mvn/version "1.5.2"}}
   ; local
   ;spring-ai {:local/root "lib/AIInterface.jar"}}
  :aliases
