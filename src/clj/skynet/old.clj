@@ -93,7 +93,7 @@
         map-obj (.getMap callback)
         unitpos (.getPos unit)
         mexes (filter (comp any-mex #(.getName %) #(.getDef %)) team-units)
-        mex-spots (set (map #(.getResourceMapSpotsNearest map-obj (.getPos %)) mexes))
+        mex-spots (set (map #(.getResourceMapSpotsNearest map-obj (:metal resources) (.getPos %)) mexes))
         metal-radius (.getExtractorRadius map-obj (:metal resources))
         metal-spot (let [buildname (if (= "armack" unitdefname)
                                       "armmoho"
