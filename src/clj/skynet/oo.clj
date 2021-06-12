@@ -31,8 +31,10 @@
   {"armcom" 20
    "armck" 30
    "armack" 10})
-(def guard-a-lab-chance 0.05)
+(def guard-a-lab-chance 0.04)
 (def repair-something-chance 0.5)
+(def help-build-something-chance 0.75)
+(def help-build-something-chance 0.75)
 
 
 (defn pprint-str [d]
@@ -211,7 +213,7 @@
                                       "armmoho"
                                       "armmex")
                          builddef (.. callback (getUnitDefByName buildname))
-                         mex-search (if (= "armack" unitdefname) 50 15)]
+                         mex-search (if (= "armack" unitdefname) 50 12)]
                      (debug "Metal radius is" metal-radius)
                      (->> metal-spots
                           (sort-by (fn [p] (distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
@@ -238,10 +240,12 @@
                       "armmex")
                     (and (not akbot-lab)
                          (or (< 20 (:income metal)) (< 1000 (:current metal)))
-                         (or (< 500 (:income energy)) (< 10000 (:current energy)))
+                         (or (< 500 (:income energy)) (< 5000 (:current energy)))
                          (= "armck" unitdefname))
                     "armalab"
-                    (and (not gantry) (< 5000 (:current metal)) (< 20000 (:current energy))
+                    (and (not gantry)
+                         (or (< 100 (:income metal)) (< 5000 (:current metal)))
+                         (or (< 5000 (:income energy)) (< 10000 (:current energy)))
                          (= "armack" unitdefname))
                     "armshltx"
                     should-build-converter
@@ -259,7 +263,7 @@
                       "armck"
                       "armadvsol"
                       "armack"
-                      "armdf"))
+                      "armfus"))
         builddef (.. callback (getUnitDefByName buildname))
         _ (when-not builddef
             (warn "Unable to find unit definition for" buildname))
@@ -283,6 +287,14 @@
     (if (seq needs-repair)
       (do
         (.repair unit (rand-nth needs-repair) (short 0) Integer/MAX_VALUE)
+        true)
+      false)))
+
+(defn help-build-something [this unit state team-units]
+  (let [building (filterv #(.isBeingBuilt %) team-units)]
+    (if (seq building)
+      (do
+        (.repair unit (rand-nth building) (short 0) Integer/MAX_VALUE)
         true)
       false)))
 
@@ -319,9 +331,11 @@
         (info "Building" (.getName builddef) "with" unitdefname "at" unitpos)
         (.build unit builddef unitpos 0 (short 0) build-timeout))
       (#{"armcom" "armck" "armack"} unitdefname) ; TODO any builder
-      (if (or (> (rand) repair-something-chance)
-              (not (repair-something this unit state team-units)))
-        (build-something this unit state team-units unitdefname))
+      (if (or (> (rand) help-build-something-chance)
+              (not (help-build-something this unit state team-units)))
+        (if (> (rand) guard-a-lab-chance)
+          (build-something this unit state team-units unitdefname)
+          (guard-a-lab this unit state team-units)))
       (any-combat unitdefname) ; attack something
       (let [enemies (.getEnemyUnitsInRadarAndLos callback)
             map-obj (.getMap callback)
@@ -341,10 +355,7 @@
   (try-log "unitFinished"
     (let [unitdefname (.. unit (getDef) (getName))]
       (debug "Unit" (str "'" unitdefname "'") "finished")
-      (assign-unit this unit)
-      (when (= "armdf" unitdefname)
-        (info "Fusion finished, active?" (.isActivated unit))
-        (.setOn unit true (short 0) Integer/MAX_VALUE)))
+      (assign-unit this unit))
     0))
 
 
