@@ -99,7 +99,9 @@
                      (getTeamUnits [this]
                        [])
                      (getEconomy [this]
-                       economy))
+                       economy)
+                     (getUnitDefs [this]
+                       []))
           state {:callback callback
                  :resources {:metal (reify Resource
                                       (getName [this]

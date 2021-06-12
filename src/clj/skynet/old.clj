@@ -106,7 +106,7 @@
                      (log/debug "Metal radius is" metal-radius)
                      (->> metal-spots
                           (remove mex-spots)
-                          (sort-by (fn [p] (u/distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
+                          (sort-by (fn [p] (u/distance unitpos (u/normalize-resource p))))
                           (map #(.findClosestBuildSite map-obj builddef % metal-radius 0 0))
                           ;(map #(.getResourceMapSpotsNearest map-obj (:metal resources) %))
                           (filter #(.isPossibleToBuildAt map-obj builddef % 0))
@@ -164,7 +164,7 @@
                         "armsolar"
                         (rand-nth ["armsolar" "armwin"]))
                       "armck"
-                      "armadvsol"
+                      "armsolar" ; "armadvsol"
                       "armack"
                       "armfus"))
         builddef (.. callback (getUnitDefByName buildname))

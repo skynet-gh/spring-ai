@@ -30,6 +30,9 @@
     (oo/discover-resources state callback)
     (is (= {:metal-spots nil
             :energy-spots nil
+            :metal-positions []
+            :energy-positions []
+            :metal-clusters []
             :min-wind 1.0
             :avg-wind 5.5
             :max-wind 10.0}

@@ -1,9 +1,12 @@
 (ns skynet.oo
   (:require
     [skynet]
+    [skynet.math :as math]
     [skynet.util :as u]
     [taoensso.timbre :as log]
     [taoensso.timbre.appenders.core :as appenders])
+  (:import
+    (com.springrts.ai.oo AIFloat3))
   (:gen-class
     :extends com.springrts.ai.oo.AbstractOOAI
     :init constructor
@@ -34,14 +37,30 @@
         _ (log/debug "Got energy res" energyres)
         map-obj (.getMap callback)
         metal-spots (seq (.getResourceMapSpotsPositions map-obj metalres))
+        with-elevation (fn [pos]
+                         (let [x (.x pos)
+                               z (.z pos)]
+                           (AIFloat3. x (.getElevationAt map-obj x z) z)))
+        metal-positions (map with-elevation metal-spots)
+        metal-clusters (let [clusters (math/cluster metal-positions)]
+                         (map-indexed
+                           (fn [n cluster]
+                             {:cluster n
+                              :center (math/average cluster)
+                              :positions cluster})
+                           clusters))
         energy-spots (seq (.getResourceMapSpotsPositions map-obj energyres))
+        energy-positions (map with-elevation energy-spots)
         min-wind (.getMinWind map-obj)
         max-wind (.getMaxWind map-obj)
         avg-wind (/ (+ min-wind max-wind) 2)
         resources {:resources {:metal metalres
                                :energy energyres}
                    :metal-spots metal-spots
+                   :metal-positions metal-positions
+                   :metal-clusters metal-clusters
                    :energy-spots energy-spots
+                   :energy-positions energy-positions
                    :min-wind min-wind
                    :avg-wind avg-wind
                    :max-wind max-wind}]
