@@ -41,19 +41,28 @@
         t3-kbots))
     "armck" "armack"))
 
+(def any-mex
+  #{"armmoho" "armmex"})
+
+
+(defn sharing?
+  "Returns true if the resource is at the share threshold."
+  [{:keys [current share storage]}]
+  (< share (/ current storage)))
 
 (defn economy-resource
   "Returns economy data for the given resource."
   [economy resource]
-  {:current (.getCurrent economy resource)
-   :excess (.getExcess economy resource)
-   :income (.getIncome economy resource)
-   :pull (.getPull economy resource)
-   :received (.getReceived economy resource)
-   :sent (.getSent economy resource)
-   :share (.getShare economy resource)
-   :storage (.getStorage economy resource)
-   :usage (.getUsage economy resource)})
+  (let [data {:current (.getCurrent economy resource)
+              :excess (.getExcess economy resource)
+              :income (.getIncome economy resource)
+              :pull (.getPull economy resource)
+              :received (.getReceived economy resource)
+              :sent (.getSent economy resource)
+              :share (.getShare economy resource)
+              :storage (.getStorage economy resource)
+              :usage (.getUsage economy resource)}]
+    (assoc data :sharing (sharing? data))))
 
 (defn economy
   "Returns all economy data"
@@ -70,11 +79,6 @@
     0
     (/ income pull)))
 
-(defn sharing?
-  "Returns true if the resource is at the share threshold."
-  [{:keys [current share storage]}]
-  (< share (/ current storage)))
-
 (defn build-something
   [unit {:keys [callback] :as state} team-units unitdefname]
   (let [{:keys [avg-wind resources metal-spots]} state
@@ -84,25 +88,32 @@
         _ (log/info (count team-units) "units on team")
         _ (log/info (str "Economy data \n" (u/pprint-str economy)))
         _ (log/info "Metal income ratio to pull is" metal-income-ratio "vs energy income ratio" energy-income-ratio)
-        should-build-metal (and (not= "armcom" unitdefname)
+        should-build-metal (and ;(not= "armcom" unitdefname)
                                 (<= metal-income-ratio energy-income-ratio))
         map-obj (.getMap callback)
         unitpos (.getPos unit)
-        metal-spot (let [metal-radius (.getExtractorRadius map-obj (:metal resources))
-                         buildname (if (= "armack" unitdefname)
+        mexes (filter (comp any-mex #(.getName %) #(.getDef %)) team-units)
+        mex-spots (set (map #(.getResourceMapSpotsNearest map-obj (.getPos %)) mexes))
+        metal-radius (.getExtractorRadius map-obj (:metal resources))
+        metal-spot (let [buildname (if (= "armack" unitdefname)
                                       "armmoho"
                                       "armmex")
-                         builddef (.. callback (getUnitDefByName buildname))
-                         mex-search (if (= "armack" unitdefname) 50 10)]
+                         builddef (.. callback (getUnitDefByName buildname))]
+                         ;mex-radius (.getResourceExtractorRange builddef (:metal resources))]
+                         ;_ (log/debug (.getName builddef) "resource extractor range is" mex-radius)]
+                         ;mex-search (quot mex-radius 2)]
+                         ;(if (= "armack" unitdefname) 50 10)]
                      (log/debug "Metal radius is" metal-radius)
                      (->> metal-spots
+                          (remove mex-spots)
                           (sort-by (fn [p] (u/distance unitpos (AIFloat3. (.x p) 0 (.z p))))) ; y is resource
-                          (map #(.findClosestBuildSite map-obj builddef % mex-search 0 0))
+                          (map #(.findClosestBuildSite map-obj builddef % metal-radius 0 0))
+                          ;(map #(.getResourceMapSpotsNearest map-obj (:metal resources) %))
                           (filter #(.isPossibleToBuildAt map-obj builddef % 0))
                           first))
-        should-build-metal-storage (and (#{"armcom" "armck"} unitdefname) (sharing? metal))
+        should-build-metal-storage (and (#{"armcom" "armck"} unitdefname) (:sharing metal))
         should-build-energy-storage (and (#{"armcom" "armck"} unitdefname)
-                                         (or (sharing? energy)
+                                         (or (:sharing energy)
                                              (< (:storage energy) (* (:income energy) 5))))
         should-build-converter (or should-build-energy-storage
                                    (pos? (- (:income energy) (:pull energy))))
@@ -138,7 +149,7 @@
                          (= "armack" unitdefname))
                     "armshltx"
                     (and (= "armck" unitdefname)
-                         (sharing? metal))
+                         (:sharing metal))
                     "armnanotc"
                     should-build-converter
                     (if (= "armack" unitdefname)
@@ -159,17 +170,19 @@
         builddef (.. callback (getUnitDefByName buildname))
         _ (when-not builddef
             (log/warn "Unable to find unit definition for" buildname))
-        build-dist (get min-build-dists unitdefname
-                        (get build-dist-override buildname min-build-dist))
+        build-dist (or (get min-build-dists unitdefname
+                           (get build-dist-override buildname min-build-dist)))
         source-pos (or (when (= "armnanotc" buildname)
                          (cond
                            gantry (.getPos gantry)
                            akbot-lab (.getPos kbot-lab)
                            kbot-lab (.getPos kbot-lab)))
                        unitpos)
-        pos (or (when should-build-metal metal-spot)
+        pos (or (when (contains? any-mex buildname) metal-spot)
                 (.findClosestBuildSite map-obj builddef source-pos 5000 build-dist 0))]
-    (log/info "Building" (.getName builddef) "with" unitdefname "at" pos)
+    (log/info "Building" (.getName builddef) "at" pos "with" unitdefname "which is currently at" unitpos)
+    (when metal-spot
+      (log/info "Closest metal spot is" metal-spot))
     (.build unit builddef pos 0 (short 0) build-timeout)))
 
 (defn guard-a-lab [unit _state team-units]
@@ -208,7 +221,7 @@
         ackbot (first (filter (comp #{"armack"} #(.getName %) #(.getDef %)) team-units))]
     (cond
       (#{"armlab"} unitdefname)
-      (let [buildname (if (and ckbot (not (sharing? metal)))
+      (let [buildname (if (and ckbot (not (:sharing metal)))
                         (rand-nth t1-kbots)
                         "armck")
             builddef (.. callback (getUnitDefByName buildname))
@@ -216,7 +229,7 @@
         (log/info "Building" builddef "(" buildname ") with" unitdefname "at" unitpos)
         (.build unit builddef unitpos 0 (short 0) build-timeout))
       (#{"armalab"} unitdefname)
-      (let [buildname (if (and ackbot (not (sharing? metal)))
+      (let [buildname (if (and ackbot (not (:sharing metal)))
                         (rand-nth t2-kbots)
                         "armack")
             builddef (.. callback (getUnitDefByName buildname))
