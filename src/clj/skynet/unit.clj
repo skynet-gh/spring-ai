@@ -16,10 +16,13 @@
   String
   (def-name [this] this)
   Keyword
-  (def-name [this] this))
+  (def-name [this] this)
+  nil
+  (def-name [this] nil))
 
 
 (defmulti typeof (fn [unit-or-def-or-name] (def-name unit-or-def-or-name)))
+
 
 (defmethod typeof "armcom" [_defname]
   ::com)
@@ -40,10 +43,10 @@
   ::solar)
 
 (defmethod typeof "armlab" [_defname]
-  ::kbot-lab)
+  ::lab)
 
 (defmethod typeof "corlab" [_defname]
-  ::kbot-lab)
+  ::lab)
 
 (defmethod typeof "armrad" [_defname]
   ::radar)
@@ -63,11 +66,55 @@
 (defmethod typeof "corhlt" [_defname]
   ::hlt)
 
+; wtf are these
+(defmethod typeof "armgplat" [_defname]
+  ::gun-plat)
+
+(defmethod typeof "corgplat" [_defname]
+  ::gun-plat)
+
 (defmethod typeof "armguard" [_defname]
   ::coastal)
 
 (defmethod typeof "corpun" [_defname]
   ::coastal)
+
+(defmethod typeof "armck" [_defname]
+  ::cons-kbot)
+
+(defmethod typeof "corck" [_defname]
+  ::cons-kbot)
+
+(defmethod typeof "armmakr" [_defname]
+  ::converter)
+
+(defmethod typeof "cormakr" [_defname]
+  ::converter)
+
+(defmethod typeof "armadvsol" [_defname]
+  ::adv-solar)
+
+(defmethod typeof "coradvsol" [_defname]
+  ::adv-solar)
+
+(defmethod typeof "armpw" [_defname]
+  ::infantry)
+
+(defmethod typeof "corak" [_defname]
+  ::infantry)
+
+(defmethod typeof "armham" [_defname]
+  ::light-plasma)
+
+(defmethod typeof "corthud" [_defname]
+  ::light-plasma)
+
+(defmethod typeof "armrock" [_defname]
+  ::rocket)
+
+(defmethod typeof "corstorm" [_defname]
+  ::rocket)
+
 
 (defmethod typeof :default [_defname]
   nil)
@@ -94,3 +141,35 @@
 
 (defmethod nameof [::core ::solar] [_ _]
   "corsolar")
+
+
+(def cons-types
+  #{::com ::cons-kbot})
+
+(defn cons? [u]
+  (contains? cons-types (typeof u)))
+
+(def lab-types
+  #{::lab ::factory})
+
+(defn lab? [u]
+  (contains? lab-types (typeof u)))
+
+
+(defmulti builds (fn [unit] (typeof unit)))
+
+
+(defmethod builds ::com [_unit]
+  #{::mex ::solar ::lab ::radar ::llt})
+
+(defmethod builds ::cons-kbot [_unit]
+  #{::mex ::solar ::lab ::radar ::llt ::hlt ::coastal ::converter ::adv-solar})
+
+(defmethod builds ::lab [_unit]
+  #{::cons-kbot ::infantry ::light-plasma ::rocket})
+
+(defmethod builds ::factory [_unit]
+  #{::cons-vehicle})
+
+(defmethod builds :default [_unit]
+  #{})

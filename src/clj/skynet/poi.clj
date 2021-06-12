@@ -1,4 +1,4 @@
-(ns skynet.strategy.base
+(ns skynet.poi
   (:require
     [skynet.unit :as u]))
 
@@ -8,22 +8,36 @@
    [{:name "start"
      :buildings
      [[::u/solar 1]
-      [::u/kbot-lab 1]
+      [::u/lab 1]
       [::u/solar 1]
       [::u/radar 1]
       [::u/llt 1]
-      [::u/solar 1]]}]
+      [::u/converter 1]
+      [::u/solar 2]
+      [::u/converter 1]
+      [::u/adv-solar 5]
+      [::u/converter 2]
+      [::u/adv-solar 5]
+      [::u/converter 2]
+      [::u/adv-solar 5]
+      [::u/converter 2]
+      [::u/adv-solar 5]]}]
    :forward
    [{:name "defense"
      :buildings
-     [[::u/llt 2]
+     [[::u/llt 1]
+      [::u/radar 1]
+      [::u/llt 2]
       [::u/hlt 1]
       [::u/llt 1]
       [::u/coastal 1]
       [::u/llt 1]
       [::u/hlt 1]
       [::u/llt 1]
-      [::u/coastal 1]]}]})
+      [::u/coastal 1]
+      [::u/llt 1]
+      [::u/hlt 1]
+      [::u/llt 2]]}]})
 
 
 (defn poi-phases

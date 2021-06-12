@@ -9,7 +9,7 @@
 
 
 
-(def default-cluster-distance 2000)
+(def default-cluster-distance 800) ;900 ;1000)
 
 
 (defn float3

@@ -178,14 +178,14 @@
   0
   #_
   (try-log "unitDestroyed"
-      (info "Unit"
-            (when unit
-              (when-let [unitdef (.getDef unit)]
-                (str "'" (.getName unitdef) "'")))
-            "destroyed by"
-            (when attacker
-              (when-let [attackerdef (.getDef attacker)]
-                (str "'" (.getName attackerdef) "'"))))
+    (info "Unit"
+          (when unit
+            (when-let [unitdef (.getDef unit)]
+              (str "'" (.getName unitdef) "'")))
+          "destroyed by"
+          (when attacker
+            (when-let [attackerdef (.getDef attacker)]
+              (str "'" (.getName attackerdef) "'"))))
     0))
 
 (defn ai-enemyDamaged [_this _enemy _attacker _damage _direction _weapon-def _paralyzer]
@@ -272,33 +272,45 @@
     0))
 
 (defn ai-weaponFired [_this unit weapon-def]
+  0
+  #_
   (u/try-log "weaponFired"
     (let [unitdefname (.. unit (getDef) (getName))]
       (log/trace "Unit" (str "'" unitdefname "'") "fired weapon" weapon-def))
     0))
 
 (defn ai-playerCommand [_this units command-topic-id player-id]
+  0
+  #_
   (u/try-log "playerCommand"
     (log/info "Player" player-id "gave command" command-topic-id "to" (count units) "units")
     0))
 
 (defn ai-commandFinished [_this unit command-id command-topic-id]
+  0
+  #_
   (u/try-log "commandFinished"
     (let [unitdefname (.. unit (getDef) (getName))]
       (log/info "Command" command-id "topic" command-topic-id "for unit" (str "'" unitdefname "'") "finished"))
     0))
 
 (defn ai-seismicPing [_this pos strength]
+  0
+  #_
   (u/try-log "seismicPing"
     (log/info "Seismic ping at" pos "strength" strength)
     0))
 
 (defn ai-message [_this player message]
+  0
+  #_
   (u/try-log "message"
     (log/info "Player" player "sent message" (str "'" message "'"))
     0))
 
 (defn ai-update [_this _frame]
+  0
+  #_
   (u/try-log "update"
     0))
 

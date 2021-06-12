@@ -6,19 +6,30 @@
     [java-time :as jt]
     [skynet.math :as math]
     [skynet.old :as old]
-    [skynet.strategy.base :as base]
+    [skynet.poi :as poi]
     [skynet.unit :as unit]
     [skynet.util :as u]
     [taoensso.timbre :as log])
   (:import
     (com.springrts.ai.oo AIFloat3)
-    (com.springrts.ai.oo.clb Game Map Point OOAICallback Unit)))
+    (com.springrts.ai.oo.clb Game Map Point OOAICallback Unit UnitDef)))
 
 
 (set! *warn-on-reflection* true)
 
 
+(def tick-millis 500)
+
 (def default-timeout 10000)
+(def fight-timeout 10000)
+
+
+(def min-build-dists
+  {::unit/lab 50
+   ::unit/llt 30
+   ::unit/hlt 30
+   ::unit/coastal 30
+   ::unit/converter 5})
 
 
 (defn unit-data [resources ^Unit unit]
@@ -38,10 +49,15 @@
 (def ignore-idle
   #{"armmex" "armsolar" "armwin" "armmakr" "armadvsol" "armmoho" "armmmkr" "armfus"})
 
+(def ignore-idle-types
+  #{::unit/mex ::unit/solar ::unit/wind ::unit/converter ::unit/adv-solar ::unit/moho
+    ::unit/adv-converter ::unit/fusion ::unit/adv-fusion
+    ::unit/llt ::unit/hlt ::unit/radar ::unit/coastal})
+
 
 (defn filter-idle [units]
   (->> units
-       (remove (comp ignore-idle #(.getName %) #(.getDef %)))
+       (remove (comp ignore-idle-types unit/typeof))
        (filter (comp empty? #(.getCurrentCommands %)))))
 
 
@@ -54,13 +70,14 @@
                    (filter (comp #{"armcom" "corcom"})
                            (map (comp #(.getName %) #(.getDef %)) team-units)))
         builder-units (filter (comp #(.isBuilder %) #(.getDef %)) team-units)
-        mexes (filter (comp pos? #(.getExtractsResource % (:metal resources)) #(.getDef %)) team-units)
+        get-extracts-metal (fn [^UnitDef unit-def] (.getExtractsResource unit-def (:metal resources)))
+        mexes (filter (comp pos? get-extracts-metal #(.getDef %)) team-units)
         mex-spots (->> mexes
                        (map
                          (fn [mex]
                            {(.getResourceMapSpotsNearest map-obj (:metal resources) (.getPos mex))
-                            {(.getName (.getDef mex)) mex}}))
-                       (merge-with merge))
+                            {(.getName (.getDef mex)) {:pos (.getPos mex) :obj mex}}}))
+                       (apply merge-with merge))
         metal-details (into {}
                         (map
                           (fn [pos]
@@ -96,6 +113,7 @@
      ::builders-data (map (partial unit-data resources) builder-units)
      ::team-units team-units
      ::metal-details metal-details
+     ::mex-by-metal mex-spots
      ::unit-defs unit-defs
      ::unit-defs-by-name unit-defs-by-name
      ::unit-defs-by-type unit-defs-by-type
@@ -103,42 +121,105 @@
 
 
 (defn give-commands
-  [{:keys [^OOAICallback callback]} {::keys [pois unit-defs-by-type metal-details]}]
+  [{:keys [^OOAICallback callback resources]} {::keys [idle-units mex-by-metal pois unit-defs-by-type]}]
   (let [^Map map-obj (.getMap callback)
+        get-resource-map-spot-near (fn [^AIFloat3 pos]
+                                     (when pos
+                                       (.getResourceMapSpotsNearest map-obj (:metal resources) pos)))
         points (.getPoints map-obj false)
         _point-poses (set (map (fn [^Point point] (.getPosition point)) points))
-        ^Game game (.getGame callback)]
+        ^Game _game (.getGame callback)
+        poi-by-unit (->> pois
+                         (mapcat
+                           (fn [poi]
+                             (map
+                               (fn [unit]
+                                 [unit (:poi-dist unit)])
+                               (:units poi)))))
+        units-for-poi (atom {})
+        get-closest-poi (fn [^Unit unit exclude]
+                          (->> pois
+                               (remove (comp (or exclude #{}) :poi-dist))
+                               (filter (comp (unit/builds unit) poi/next-building))
+                               (sort-by (comp (partial u/distance (.getPos unit)) :center))
+                               first
+                               :poi-dist))
+        get-def (fn [^Unit unit] (.getDef unit))
+        builder? (comp (fn [^UnitDef unit-def] (.isBuilder unit-def)) get-def)
+        fighter? (comp (fn [^UnitDef unit-def] (.isAbleToFight unit-def)) get-def)]
     #_ ; does nothing
     (doseq [poi pois]
       (let [center (:center poi)
             zone (rand-int 256)] ; why
         (.sendTextMessage game (str (:poi-dist poi) " z" zone) zone)
         (.setLastMessagePosition game center)))
-    (doseq [poi pois]
+    (doseq [^Unit unit idle-units]
+      (when-not (get poi-by-unit unit)
+        (cond
+          (builder? unit)
+          (when-let [closest-poi (get-closest-poi unit #{})]
+            (log/debug "Unit" unit "(" (unit/typeof unit) ") is not in a POI"
+                       "assigning it to closest that needs work which is" closest-poi)
+            (swap! units-for-poi update closest-poi conj unit))
+          (fighter? unit)
+          (when-let [next-poi (rand-nth (vec pois))]
+            (log/debug "Unit" unit "(" (unit/typeof unit) ") is not in a POI"
+                       "sending it to fight at a random POI" (:poi-dist next-poi))
+            (if (pos? (rand-int 2))
+              (.fight unit (:center next-poi) (short 0) fight-timeout)
+              (.attack unit (:center next-poi) (short 0) fight-timeout)))
+          :else
+          nil)))
+    (doseq [{:keys [poi-dist] :as poi} pois]
       (log/debug "POI" (:poi-dist poi) "at" (:center poi))
-      (let [next-build-type (base/next-building poi)
-            idle-units (filter-idle (:units poi))
-            build-def (get unit-defs-by-type next-build-type)
-            build-pos (cond
-                        (= ::unit/mex next-build-type)
-                        (->> poi
-                             :positions 
-                             (remove (comp ::mexes metal-details))
-                             (filter #(.isPossibleToBuildAt map-obj build-def % 0))
-                             first)
-                        build-def
-                        (.findClosestBuildSite map-obj build-def (:center poi) math/default-cluster-distance 0 0)
-                        :else 
-                        nil)]
-        (doseq [^Unit unit (filter (comp #(.isBuilder %) #(.getDef %)) idle-units)]
-          (if build-def
-            (do
-              (log/debug "Unit" unit "which is an" (unit/def-name unit) "which is type" (unit/typeof unit)
-                         "should build" next-build-type)
-              (.build unit build-def build-pos 0 (short 0) default-timeout))
-            (when-let [next-poi (first (filter #(< (:poi-dist poi) (:poi-dist %)) pois))]
-              (log/debug "Unit" unit "moving to POI" (:poi-dist next-poi))
-              (.moveTo unit (:center next-poi) (short 0) default-timeout))))))))
+      (let [poi-wants (poi/next-building poi)
+            idle-units (concat (get @units-for-poi poi-dist) (filter-idle (:units poi)))
+            builders (filter builder? idle-units)
+            fighters (->> idle-units
+                          (remove builder?)
+                          (filter fighter?))]
+        (doseq [^Unit unit builders]
+          (let [unit-builds (unit/builds unit)
+                build-type (cond
+                             (contains? unit-builds poi-wants) poi-wants
+                             (unit/lab? unit)
+                             (if (< 2 (count builders)) ; TODO better logic
+                               ::cons-kbot
+                               (rand-nth (vec unit-builds)))
+                             :else
+                             nil)
+                build-def (get unit-defs-by-type build-type)
+                min-dist (or
+                           (get min-build-dists build-type)
+                           0)
+                metal-radius (.getExtractorRadius map-obj (:metal resources))
+                build-pos (cond
+                            (= ::unit/mex build-type)
+                            (->> poi
+                                 :positions
+                                 (remove (comp #(get mex-by-metal %) get-resource-map-spot-near))
+                                 (map #(.findClosestBuildSite map-obj build-def % metal-radius 0 0))
+                                 (filter #(.isPossibleToBuildAt map-obj build-def % 0))
+                                 first)
+                            build-def
+                            (.findClosestBuildSite
+                              map-obj build-def (:center poi) math/default-cluster-distance min-dist 0)
+                            :else
+                            nil)]
+            (if (and build-type build-def build-pos)
+              (do
+                (log/debug "Unit" unit "which is an" (unit/def-name unit) "which is type"
+                           (unit/typeof unit) "should build" build-type)
+                (.build unit build-def build-pos 0 (short 0) default-timeout))
+              (let [closest-poi (get-closest-poi unit #{(:poi-dist poi)})]
+                (log/debug "Assigning unit" unit "(" (unit/typeof unit) ") to closest POI that needs work which is" closest-poi)
+                (swap! units-for-poi update closest-poi conj unit)))))
+        (doseq [^Unit unit fighters]
+          (when-let [next-poi (rand-nth (vec pois))]
+            (log/debug "Unit" unit "(" (unit/typeof unit) ") sent to fight at POI" (:poi-dist next-poi))
+            (if (pos? (rand-int 2))
+              (.fight unit (:center next-poi) (short 0) fight-timeout)
+              (.attack unit (:center next-poi) (short 0) fight-timeout))))))))
 
 
 (defn run [state-atom]
@@ -160,7 +241,7 @@
   (log/info "Init async logic")
   (let [now (jt/instant)]
     (chime/chime-at
-      (chime/periodic-seq now (jt/duration 1000 :millis))
+      (chime/periodic-seq now (jt/duration tick-millis :millis))
       (fn [_chimestamp]
         (run state))
       {:error-handler handle-error})))

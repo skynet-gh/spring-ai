@@ -2,10 +2,11 @@
   (:require
     [clojure.string :as string]
     [clojure.test :refer [deftest is testing]]
-    [skynet])
+    [skynet]
+    [skynet.math :as math])
   (:import
     (com.springrts.ai.oo AIFloat3)
-    (com.springrts.ai.oo.clb Economy Map OOAICallback Resource)))
+    (com.springrts.ai.oo.clb Economy Map OOAICallback Resource Unit UnitDef)))
 
 
 (deftest init
@@ -64,6 +65,19 @@
   (when resource
     (get-in initial-economy [(keyword (string/lower-case (.getName resource))) metric])))
 
+(defn mock-unit [def-name pos]
+  (reify Unit
+    (getDef [this]
+      (reify UnitDef
+        (getName [this]
+          def-name)
+        (getExtractsResource [this resource]
+          1.0)
+        (isBuilder [this]
+          false)))
+    (getPos [this]
+      (math/float3 pos))))
+
 
 (deftest world
   (testing "initial"
@@ -97,7 +111,7 @@
                      (getMap [this]
                        map-obj)
                      (getTeamUnits [this]
-                       [])
+                       [(mock-unit "armmex" [3 2 1])])
                      (getEconomy [this]
                        economy)
                      (getUnitDefs [this]
@@ -110,7 +124,6 @@
                                        (getName [this]
                                          "Energy"))}}]
       (is (= {:skynet/pois (),
-              :skynet/team-units [],
               :skynet/builders-data (),
               :skynet/metal-details {},
               :skynet/unit-defs-by-name {},
@@ -121,4 +134,22 @@
               :skynet/unit-def-names-by-type {}}
              (dissoc
                (skynet/world state)
-               :skynet/economy))))))
+               :skynet/economy
+               :skynet/team-units
+               :skynet/mex-by-metal)))
+      (is (= 1
+             (count
+               (:skynet/team-units
+                 (skynet/world state)))))
+      (is (= 1
+             (count
+               (:skynet/mex-by-metal
+                 (skynet/world state)))))
+      (is (map?
+            (:skynet/mex-by-metal
+              (skynet/world state))))
+      (is (map?
+            (get
+              (:skynet/mex-by-metal
+                (skynet/world state))
+              (math/float3 [0 0 0])))))))

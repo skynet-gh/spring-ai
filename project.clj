@@ -2,6 +2,7 @@
   :source-paths ["src/clj"]
   :test-paths ["test/clj"]
   :java-source-paths ["src/java"]
+  :jvm-opts ["-Xmx2g" "-server"]
   :dependencies [[aleph "0.4.6"]
                  [clojure.java-time "0.3.2"]
                  [com.taoensso/sente "1.15.0"]
