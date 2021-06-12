@@ -25,7 +25,7 @@ local infos = {
 	},
 	{
 		key    = 'className',
-		value  = 'skynet.SpringAIMain',
+		value  = 'skynet.SkynetAI',
 		desc   = 'fully qualified name of a class that implements interface com.springrts.ai.AI',
 	},
 	{
